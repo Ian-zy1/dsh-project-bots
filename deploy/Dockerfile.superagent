@@ -1,0 +1,20 @@
+ARG NODE_IMAGE=node:24.18.0-bookworm-slim
+FROM ${NODE_IMAGE} AS build
+WORKDIR /opt/superagent
+RUN npm install --global pnpm@11.7.0
+COPY components/superagent/ ./
+RUN pnpm install --frozen-lockfile && pnpm build
+
+FROM ${NODE_IMAGE}
+RUN apt-get update && apt-get install -y --no-install-recommends bash ca-certificates curl git gh openssh-client ripgrep && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt/runtime
+COPY deploy/runtime-package.json ./package.json
+COPY deploy/runtime-package-lock.json ./package-lock.json
+RUN npm ci --no-audit --no-fund
+COPY --from=build /opt/superagent/ /opt/superagent/
+COPY deploy/start-superagent.mjs /opt/project-bots/start-superagent.mjs
+RUN install -d -o node -g node -m 0700 /state
+ENV DSH_HOME=/state/dsh HOME=/state/home NARB_DISABLE_NATIVE_CACHE=1 PATH=/opt/runtime/node_modules/.bin:$PATH
+USER node
+EXPOSE 3080
+ENTRYPOINT ["node", "/opt/project-bots/start-superagent.mjs"]

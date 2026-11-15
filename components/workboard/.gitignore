@@ -1,0 +1,20 @@
+# Local development and generated output
+node_modules/
+dist/
+build/
+coverage/
+__pycache__/
+.cache/
+.DS_Store
+*.log
+
+# Credentials and local state
+.env
+.env.*
+!.env.example
+.local/
+.state/
+.worktrees/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

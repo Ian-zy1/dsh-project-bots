@@ -1,0 +1,32 @@
+{
+  "enabledFeishu": true,
+  "feishuSource": {
+    "chats": [{ "chatId": "oc_ReplaceWithTestGroup", "name": "Project Bots test", "listen": "mentions" }],
+    "directMessages": false,
+    "otherChats": "none"
+  },
+  "policy": {
+    "sources": {
+      "feishu": { "allowed": [{ "id": "ou_ReplaceWithDispatcherId" }] }
+    }
+  },
+  "superagent": {
+    "awProjectId": "prj_replace",
+    "awBaseUrl": "http://workboard:4180/",
+    "awRepositories": {
+      "status-page": {
+        "repositoryUrl": "https://github.com/your-account/status-page",
+        "environmentRef": "node24",
+        "environment": {
+          "path": ["/usr/local/bin", "/usr/bin", "/bin"],
+          "executables": ["node", "npm", "git"]
+        }
+      }
+    },
+    "awDispatchWriteUrl": "http://workboard:4180/",
+    "awDispatchAuthorizationFile": "/config/dispatch-authorization",
+    "ownerReportChatId": "oc_ReplaceWithTestGroup",
+    "ownerReportBotId": "ou_ReplaceWithRelayIdSeenByDsh",
+    "ownerDispatchEvents": true
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "dsh-project-bots-runtime",
+  "private": true,
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.2.1-rc.3",
+    "@larksuite/cli": "1.0.100"
+  }
+}

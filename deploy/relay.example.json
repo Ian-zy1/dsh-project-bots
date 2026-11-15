@@ -1,0 +1,13 @@
+{
+  "stateFile": "/absolute/private/relay/state.sqlite",
+  "larkCli": "/absolute/bin/lark-cli",
+  "larkConfigDir": "/absolute/private/relay-lark",
+  "chatId": "oc_replace",
+  "botOpenId": "ou_ReplaceWithRelayBotId",
+  "projectPublishers": {
+    "prj_replace": "ou_ReplaceWithDshBotId"
+  },
+  "owner": {
+    "codexCli": "/absolute/bin/codex"
+  }
+}

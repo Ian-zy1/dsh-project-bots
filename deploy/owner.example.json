@@ -1,0 +1,25 @@
+{
+  "preferredChannel": "feishu",
+  "awProjectId": "prj_replace",
+  "awBaseUrl": "http://127.0.0.1:4319/",
+  "compose": {
+    "project": "project-bots-demo",
+    "file": "/absolute/project-bots/deploy/compose.yaml",
+    "envFile": "/absolute/private/installation.env"
+  },
+  "awAccess": {
+    "internalApiBase": "http://127.0.0.1:4180/api/v1"
+  },
+  "superagentAccess": {
+    "workerAwApiBase": "http://workboard:4180/api/v1"
+  },
+  "cli": "/absolute/bin/lark-cli",
+  "larkConfigDir": "/absolute/private/owner-lark",
+  "botOpenId": "ou_ReplaceWithDshBotId",
+  "ownerRelay": {
+    "autoDispatchBinding": true,
+    "chatId": "oc_replace",
+    "entrypoint": "/absolute/project-bots/components/owner-relay/cli.mjs",
+    "configPath": "/absolute/private/relay.json"
+  }
+}

@@ -1,0 +1,58 @@
+name: dsh-project-bots
+
+services:
+  workboard:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.workboard
+      args:
+        NODE_IMAGE: "${NODE_IMAGE:-node:24.18.0-bookworm-slim}"
+    environment:
+      WORKBOARD_PUBLIC_URL: "http://127.0.0.1:${AW_PORT:-4319}/"
+      WORKBOARD_AGENT_HOST: workboard:4180
+      WORKBOARD_OWNER_WRITE_LOCAL_ONLY: "1"
+      WORKBOARD_DISPATCH_AUTHORIZATION_FILE: /run/secrets/aw-dispatch
+    ports:
+      - "127.0.0.1:${AW_PORT:-4319}:4180"
+    volumes:
+      - workboard-data:/data
+      - type: bind
+        source: "${PROJECT_BOTS_CONFIG_DIR:?Set PROJECT_BOTS_CONFIG_DIR}/dispatch-authorization"
+        target: /run/secrets/aw-dispatch
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4180/api/health').then(r=>{if(!r.ok)process.exitCode=1}).catch(()=>process.exitCode=1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  dsh:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.superagent
+      args:
+        NODE_IMAGE: "${NODE_IMAGE:-node:24.18.0-bookworm-slim}"
+    environment:
+      DSH_WEB_PORT: "${DSH_PORT:-4320}"
+    ports:
+      - "127.0.0.1:${DSH_PORT:-4320}:3080"
+    volumes:
+      - dsh-data:/state
+      - type: bind
+        source: "${PROJECT_BOTS_CONFIG_DIR:?Set PROJECT_BOTS_CONFIG_DIR to the dedicated private configuration directory}"
+        target: /config
+        read_only: true
+    depends_on:
+      workboard:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3081/orchestrator/api/state',{headers:{'x-orchestrator-request':'1'}}).then(r=>{if(!r.ok)process.exitCode=1}).catch(()=>process.exitCode=1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 16
+
+volumes:
+  dsh-data:
+  workboard-data:

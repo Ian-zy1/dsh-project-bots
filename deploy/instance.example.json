@@ -1,0 +1,8 @@
+{
+  "enabledFeishu": false,
+  "superagent": {
+    "awBaseUrl": "http://workboard:4180/",
+    "awDispatchWriteUrl": "http://workboard:4180/",
+    "awDispatchAuthorizationFile": "/config/dispatch-authorization"
+  }
+}

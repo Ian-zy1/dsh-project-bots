@@ -1,0 +1,14 @@
+# The host already has this Debian base. Replace its runtime with the verified Node 24 binary in the delivery bundle.
+ARG BASE_IMAGE=node:25.9.0-bookworm-amd64
+FROM ${BASE_IMAGE}
+USER root
+COPY runtime/node /usr/local/bin/node
+RUN test "$(node --version)" = "v24.18.0"
+WORKDIR /app
+COPY --chown=1000:1000 server/ ./server/
+COPY --chown=1000:1000 dist/ ./dist/
+ENV NODE_ENV=production WORKBOARD_HOST=0.0.0.0 WORKBOARD_PORT=4180 WORKBOARD_DB=/data/workboard.sqlite
+USER 1000:1000
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 CMD node -e "fetch('http://127.0.0.1:4180/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+ENTRYPOINT ["node"]
+CMD ["server/start.mjs"]

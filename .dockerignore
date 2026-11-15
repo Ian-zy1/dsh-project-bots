@@ -1,0 +1,11 @@
+.git
+**/.git
+**/node_modules
+**/dist
+**/coverage
+**/__pycache__
+**/.DS_Store
+**/.env
+run
+
+/components/superagent/lib

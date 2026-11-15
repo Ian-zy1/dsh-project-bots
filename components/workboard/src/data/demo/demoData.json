@@ -1,0 +1,574 @@
+{
+  "meta": {
+    "demo": true,
+    "dataUpdatedAt": "2026-11-11T09:40:00+08:00",
+    "sourceNote": "本页全部为虚构演示数据，未连接 GitHub、Superagent 或其他执行器；分支、PR、SHA 与评审记录均为示例，不代表真实交付。",
+    "schemaVersion": "display-v0-demo-1"
+  },
+  "projects": [
+    {
+      "id": "proj-workboard",
+      "name": "Agent Workboard 展示版",
+      "summary": "验证只读工作台的信息结构：需求依据、任务状态、同一任务的多份候选，以及验证与评审证据。",
+      "updatedAt": "2026-11-11T09:40:00+08:00",
+      "repositories": [{ "name": "demo/workboard-ui", "role": "展示前端（虚构仓库）" }],
+      "resources": [
+        { "label": "展示版范围", "ref": "docs/display-v0.md（演示引用）" },
+        { "label": "Agent 工作约定", "ref": "AGENTS.md（演示引用）" }
+      ]
+    },
+    {
+      "id": "proj-docs-portal",
+      "name": "文档门户改版",
+      "summary": "验证窄屏阅读与状态筛选；多项目展示只用于阅读体验，不代表真实多项目执行能力已实现。",
+      "updatedAt": "2026-11-10T18:20:00+08:00",
+      "repositories": [{ "name": "demo/docs-portal", "role": "文档门户前端（虚构仓库）" }],
+      "resources": [{ "label": "产品范围", "ref": "docs/product.md（演示引用）" }]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "req-display-v0",
+      "projectId": "proj-workboard",
+      "title": "首个只读展示版",
+      "goal": "让用户快速找到项目中的需求与任务，辨认当前状态，并比较同一任务下不同 Agent 的候选实现与证据。",
+      "scope": [
+        "项目入口、任务列表与任务详情；支持项目切换和状态筛选。",
+        "同一任务展示多份候选，分别记录执行、候选 SHA、验证与评审。",
+        "活动记录标明时间、主体与来源。",
+        "全部使用明确标注的演示数据，不接真实数据源。"
+      ],
+      "acceptanceCriteria": [
+        "能找到任务，并理解其目标、状态和验收要求。",
+        "能比较同一任务的不同候选，状态和证据不会串用。",
+        "缺失证据明确显示为未知或未提供。",
+        "具备空列表、无候选和读取失败的呈现。",
+        "桌面和窄屏均可正常阅读。"
+      ],
+      "plans": [
+        {
+          "version": "plan-v1",
+          "approvedAt": "2026-11-10T09:00:00+08:00",
+          "approvedBy": "Owner-Demo",
+          "sourceRef": "演示计划记录 plan-v1",
+          "note": "技术栈、单页布局与演示数据规模已确认。"
+        }
+      ],
+      "baseline": {
+        "branch": "main",
+        "sha": "e5eaec7b3af7505bcf901a803a2825c90def76a7",
+        "recordedAt": "2026-11-10T09:00:00+08:00"
+      },
+      "repositories": [{ "name": "demo/workboard-ui", "role": "展示前端（虚构仓库）" }],
+      "resources": [
+        { "label": "展示版范围", "ref": "docs/display-v0.md（演示引用）" },
+        { "label": "Agent 工作约定", "ref": "AGENTS.md（演示引用）" }
+      ],
+      "updatedAt": "2026-11-10T09:00:00+08:00"
+    },
+    {
+      "id": "req-evidence",
+      "projectId": "proj-workboard",
+      "title": "候选证据与状态区分",
+      "goal": "在同一任务中分别呈现执行结束、评审结论与最终采纳，且评审结论只对明确的候选 SHA 生效。",
+      "scope": [
+        "候选卡片分区展示执行、验证、评审与阻塞。",
+        "当评审 SHA 与当前候选 SHA 不一致时，明确提示结论不能沿用。",
+        "缺失的分支、PR、SHA 或证据显示为未提供或未知。"
+      ],
+      "acceptanceCriteria": [
+        "同一任务的两份候选状态、SHA 和评审结论不会串用。",
+        "评审针对的 SHA 与候选当前 SHA 同时可见。",
+        "执行结束、评审通过与最终采纳是三个独立字段。",
+        "阻塞原因与待处理事项可见。"
+      ],
+      "plans": [
+        {
+          "version": "plan-v1",
+          "approvedAt": "2026-11-10T09:00:00+08:00",
+          "approvedBy": "Owner-Demo",
+          "sourceRef": "演示计划记录 plan-v1",
+          "note": "与展示版同批批准，覆盖候选证据呈现。"
+        }
+      ],
+      "baseline": {
+        "branch": "main",
+        "sha": "e5eaec7b3af7505bcf901a803a2825c90def76a7",
+        "recordedAt": "2026-11-10T09:00:00+08:00"
+      },
+      "repositories": [{ "name": "demo/workboard-ui", "role": "展示前端（虚构仓库）" }],
+      "resources": [{ "label": "整体架构", "ref": "docs/architecture.md（演示引用）" }],
+      "updatedAt": "2026-11-11T08:15:00+08:00"
+    },
+    {
+      "id": "req-reading",
+      "projectId": "proj-docs-portal",
+      "title": "文档门户阅读体验验证",
+      "goal": "验证常规桌面宽度与窄屏下的列表、详情和证据阅读，不涉及真实文档同步。",
+      "scope": [
+        "项目切换与状态筛选在窄屏仍可操作。",
+        "任务详情与候选证据在窄屏按上下结构阅读。",
+        "空列表和无候选有明确说明。"
+      ],
+      "acceptanceCriteria": [
+        "390px 宽度下可完成项目切换、筛选、进入详情与返回列表。",
+        "长文本与证据字段不会溢出或遮挡。",
+        "空状态与缺失证据不显示为成功。"
+      ],
+      "plans": [
+        {
+          "version": "plan-v1",
+          "approvedAt": "2026-11-10T11:00:00+08:00",
+          "approvedBy": "Owner-Demo",
+          "sourceRef": "演示计划记录 plan-v1",
+          "note": "仅阅读体验验证；不含真实多项目执行能力。"
+        }
+      ],
+      "baseline": {
+        "branch": "main",
+        "sha": "e5eaec7b3af7505bcf901a803a2825c90def76a7",
+        "recordedAt": "2026-11-10T11:00:00+08:00"
+      },
+      "repositories": [{ "name": "demo/docs-portal", "role": "文档门户前端（虚构仓库）" }],
+      "resources": [{ "label": "产品范围", "ref": "docs/product.md（演示引用）" }],
+      "updatedAt": "2026-11-11T07:05:00+08:00"
+    },
+    {
+      "id": "req-boundary",
+      "projectId": "proj-docs-portal",
+      "title": "后续管理操作边界",
+      "goal": "明确展示版不提供创建、派发、停止、审批与合入操作，相关入口只作说明。",
+      "scope": ["记录后续可能的写入能力与批准边界。", "当前只显示说明，不制作会让人误以为已生效的按钮。"],
+      "acceptanceCriteria": [
+        "页面不存在真实创建、派发、停止、审批或合入操作。",
+        "超出展示范围的能力以说明文字呈现。"
+      ],
+      "plans": [
+        {
+          "version": "draft-v0",
+          "approvedAt": null,
+          "approvedBy": null,
+          "sourceRef": "演示计划草案 draft-v0",
+          "note": "仅记录边界，计划尚未批准。"
+        }
+      ],
+      "baseline": null,
+      "repositories": [{ "name": "demo/docs-portal", "role": "文档门户前端（虚构仓库）" }],
+      "resources": [{ "label": "后续管理操作", "ref": "演示草案 note-04（虚构）" }],
+      "updatedAt": "2026-11-09T10:00:00+08:00"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "task-display-board",
+      "projectId": "proj-workboard",
+      "requirementId": "req-display-v0",
+      "title": "实现单页只读看板",
+      "status": "ready_to_merge",
+      "updatedAt": "2026-11-11T09:30:00+08:00",
+      "adoption": null
+    },
+    {
+      "id": "task-candidate-evidence",
+      "projectId": "proj-workboard",
+      "requirementId": "req-evidence",
+      "title": "候选证据分区与 SHA 绑定",
+      "status": "in_review",
+      "updatedAt": "2026-11-11T08:15:00+08:00",
+      "adoption": null
+    },
+    {
+      "id": "task-empty-evidence",
+      "projectId": "proj-workboard",
+      "requirementId": "req-evidence",
+      "title": "阻塞候选的证据补全",
+      "status": "blocked",
+      "updatedAt": "2026-11-10T16:40:00+08:00",
+      "adoption": null
+    },
+    {
+      "id": "task-status-filter",
+      "projectId": "proj-docs-portal",
+      "requirementId": "req-reading",
+      "title": "状态筛选与项目切换",
+      "status": "in_progress",
+      "updatedAt": "2026-11-11T07:05:00+08:00",
+      "adoption": null
+    },
+    {
+      "id": "task-narrow-reading",
+      "projectId": "proj-docs-portal",
+      "requirementId": "req-reading",
+      "title": "窄屏阅读与空状态走查",
+      "status": "done",
+      "updatedAt": "2026-11-10T18:20:00+08:00",
+      "adoption": {
+        "candidateId": "cand-f",
+        "decidedBy": "Owner-Demo",
+        "at": "2026-11-10T18:15:00+08:00",
+        "sourceRef": "演示采纳记录 adopt-f"
+      }
+    },
+    {
+      "id": "task-future-actions",
+      "projectId": "proj-docs-portal",
+      "requirementId": "req-boundary",
+      "title": "后续管理操作入口（未开始）",
+      "status": "pending",
+      "updatedAt": "2026-11-09T10:00:00+08:00",
+      "adoption": null
+    }
+  ],
+  "candidates": [
+    {
+      "id": "cand-a",
+      "taskId": "task-display-board",
+      "executorName": "Agent-Super-1",
+      "executorKind": "superagent",
+      "method": "原生 Superagent Ticket → Worker → PR（演示）",
+      "execution": {
+        "status": "succeeded",
+        "summary": "在演示分支完成单页看板，执行结束。",
+        "nativeRef": "demo/ticket/1001",
+        "updatedAt": "2026-11-11T08:50:00+08:00"
+      },
+      "branch": "agent/demo-display-a",
+      "pr": "demo/workboard-ui#21",
+      "sha": "5fb11ea2e1815019a309e8994d16c071eea3d47a",
+      "baseSha": "e5eaec7b3af7505bcf901a803a2825c90def76a7",
+      "verification": {
+        "status": "passed",
+        "summary": "构建、测试与桌面/窄屏截图检查通过。",
+        "evidenceRef": "demo/evidence/run-a"
+      },
+      "reviewId": "rev-a",
+      "blockers": [],
+      "todos": [],
+      "updatedAt": "2026-11-11T08:55:00+08:00"
+    },
+    {
+      "id": "cand-b",
+      "taskId": "task-display-board",
+      "executorName": "Agent-Local-2",
+      "executorKind": "local-agent",
+      "method": "本地脚本生成静态原型（演示）",
+      "execution": {
+        "status": "succeeded",
+        "summary": "提交本地静态原型，执行结束。",
+        "nativeRef": "demo/local/run-2",
+        "updatedAt": "2026-11-11T08:40:00+08:00"
+      },
+      "branch": "codex/demo-display-b",
+      "pr": "demo/workboard-ui#22",
+      "sha": "a3ac8588741a1fa4ef044131607130bbad5493b0",
+      "baseSha": "e5eaec7b3af7505bcf901a803a2825c90def76a7",
+      "verification": {
+        "status": "partial",
+        "summary": "仅完成构建检查，窄屏截图缺失。",
+        "evidenceRef": "demo/evidence/run-b"
+      },
+      "reviewId": "rev-b",
+      "blockers": ["评审要求补充窄屏截图与读取失败说明。"],
+      "todos": ["补充窄屏与失败状态证据"],
+      "updatedAt": "2026-11-11T09:10:00+08:00"
+    },
+    {
+      "id": "cand-c",
+      "taskId": "task-candidate-evidence",
+      "executorName": "Agent-Super-2",
+      "executorKind": "superagent",
+      "method": "原生 Superagent Ticket → Worker → PR（演示）",
+      "execution": {
+        "status": "succeeded",
+        "summary": "完成证据分区布局并更新分支。",
+        "nativeRef": "demo/ticket/1002",
+        "updatedAt": "2026-11-11T08:10:00+08:00"
+      },
+      "branch": "agent/demo-evidence-c",
+      "pr": "demo/workboard-ui#23",
+      "sha": "86822d108416d24ba77a5a5cc67bf08dcdb71a43",
+      "baseSha": "e5eaec7b3af7505bcf901a803a2825c90def76a7",
+      "verification": {
+        "status": "passed",
+        "summary": "单元测试与构建通过。",
+        "evidenceRef": "demo/evidence/run-c"
+      },
+      "reviewId": "rev-c",
+      "blockers": [],
+      "todos": ["按新 SHA 重新申请评审"],
+      "updatedAt": "2026-11-11T08:15:00+08:00"
+    },
+    {
+      "id": "cand-d",
+      "taskId": "task-empty-evidence",
+      "executorName": "Agent-Local-2",
+      "executorKind": "local-agent",
+      "method": "本地 Agent 执行（演示）",
+      "execution": {
+        "status": "blocked",
+        "summary": "等待补充的演示资料，执行暂停。",
+        "nativeRef": "demo/local/run-4",
+        "updatedAt": "2026-11-10T16:40:00+08:00"
+      },
+      "branch": "codex/demo-evidence-d",
+      "pr": null,
+      "sha": null,
+      "baseSha": null,
+      "verification": {
+        "status": "not_run",
+        "summary": null,
+        "evidenceRef": null
+      },
+      "reviewId": null,
+      "blockers": ["缺少验收条件的中文文案，尚未开始验证。"],
+      "todos": ["补齐演示资料后重跑"],
+      "updatedAt": "2026-11-10T16:40:00+08:00"
+    },
+    {
+      "id": "cand-e",
+      "taskId": "task-status-filter",
+      "executorName": "Agent-Super-3",
+      "executorKind": "superagent",
+      "method": "原生 Superagent Ticket → Worker → PR（演示）",
+      "execution": {
+        "status": "running",
+        "summary": "正在实现状态筛选与项目切换；尚无候选 SHA。",
+        "nativeRef": "demo/ticket/1003",
+        "updatedAt": "2026-11-11T07:05:00+08:00"
+      },
+      "branch": "agent/demo-filter-e",
+      "pr": null,
+      "sha": null,
+      "baseSha": "e5eaec7b3af7505bcf901a803a2825c90def76a7",
+      "verification": {
+        "status": "unknown",
+        "summary": null,
+        "evidenceRef": null
+      },
+      "reviewId": null,
+      "blockers": [],
+      "todos": ["完成后提交候选 SHA 与截图"],
+      "updatedAt": "2026-11-11T07:05:00+08:00"
+    },
+    {
+      "id": "cand-f",
+      "taskId": "task-narrow-reading",
+      "executorName": "Agent-Human-4",
+      "executorKind": "human",
+      "method": "人工设计走查与截图（演示）",
+      "execution": {
+        "status": "succeeded",
+        "summary": "人工走查完成，交付候选分支。",
+        "nativeRef": "demo/manual/4",
+        "updatedAt": "2026-11-10T17:40:00+08:00"
+      },
+      "branch": "agent/demo-narrow-f",
+      "pr": "demo/docs-portal#12",
+      "sha": "a37557ad0aefafdc947b7f195e4fb4c0a9add544",
+      "baseSha": "e5eaec7b3af7505bcf901a803a2825c90def76a7",
+      "verification": {
+        "status": "passed",
+        "summary": "窄屏 390px 与空状态检查通过。",
+        "evidenceRef": "demo/evidence/run-f"
+      },
+      "reviewId": "rev-f",
+      "blockers": [],
+      "todos": [],
+      "updatedAt": "2026-11-10T17:55:00+08:00"
+    }
+  ],
+  "reviews": [
+    {
+      "id": "rev-a",
+      "candidateId": "cand-a",
+      "reviewer": "Reviewer-Demo-1",
+      "reviewedSha": "5fb11ea2e1815019a309e8994d16c071eea3d47a",
+      "status": "accepted",
+      "summary": "检查候选当前 SHA 的页面、空状态与演示标识；通过。",
+      "at": "2026-11-11T09:00:00+08:00",
+      "sourceRef": "demo/reviews/rev-a"
+    },
+    {
+      "id": "rev-b",
+      "candidateId": "cand-b",
+      "reviewer": "Reviewer-Demo-1",
+      "reviewedSha": "a3ac8588741a1fa4ef044131607130bbad5493b0",
+      "status": "changes_requested",
+      "summary": "要求补充窄屏截图与读取失败说明。",
+      "at": "2026-11-11T09:05:00+08:00",
+      "sourceRef": "demo/reviews/rev-b"
+    },
+    {
+      "id": "rev-c",
+      "candidateId": "cand-c",
+      "reviewer": "Reviewer-Demo-2",
+      "reviewedSha": "4b55270161cce0e30315578e78c10c577e17c092",
+      "status": "accepted",
+      "summary": "该结论仅针对旧 SHA；当前 SHA 尚未复审。",
+      "at": "2026-11-10T20:00:00+08:00",
+      "sourceRef": "demo/reviews/rev-c"
+    },
+    {
+      "id": "rev-f",
+      "candidateId": "cand-f",
+      "reviewer": "Reviewer-Demo-1",
+      "reviewedSha": "a37557ad0aefafdc947b7f195e4fb4c0a9add544",
+      "status": "accepted",
+      "summary": "当前 SHA 的窄屏阅读与空状态检查通过。",
+      "at": "2026-11-10T17:50:00+08:00",
+      "sourceRef": "demo/reviews/rev-f"
+    }
+  ],
+  "activities": [
+    {
+      "id": "act-101",
+      "projectId": "proj-workboard",
+      "taskId": "task-display-board",
+      "kind": "plan_confirmed",
+      "actor": "Owner-Demo",
+      "at": "2026-11-10T09:00:00+08:00",
+      "summary": "确认 plan-v1：首个只读展示版范围。",
+      "sourceRef": "演示计划记录 plan-v1"
+    },
+    {
+      "id": "act-102",
+      "projectId": "proj-workboard",
+      "taskId": "task-display-board",
+      "kind": "execution_report",
+      "actor": "Agent-Super-1",
+      "at": "2026-11-11T08:50:00+08:00",
+      "summary": "提交候选 A：单页看板与演示读取层。",
+      "sourceRef": "演示执行记录 exec-a"
+    },
+    {
+      "id": "act-103",
+      "projectId": "proj-workboard",
+      "taskId": "task-display-board",
+      "kind": "review",
+      "actor": "Reviewer-Demo-1",
+      "at": "2026-11-11T09:00:00+08:00",
+      "summary": "针对候选 A 当前 SHA 评审通过。",
+      "sourceRef": "演示评审 rev-a"
+    },
+    {
+      "id": "act-104",
+      "projectId": "proj-workboard",
+      "taskId": "task-display-board",
+      "kind": "execution_report",
+      "actor": "Agent-Local-2",
+      "at": "2026-11-11T08:40:00+08:00",
+      "summary": "提交候选 B：静态原型；窄屏证据缺失。",
+      "sourceRef": "演示执行记录 exec-b"
+    },
+    {
+      "id": "act-105",
+      "projectId": "proj-workboard",
+      "taskId": "task-display-board",
+      "kind": "review",
+      "actor": "Reviewer-Demo-1",
+      "at": "2026-11-11T09:05:00+08:00",
+      "summary": "要求候选 B 补充窄屏与失败状态证据。",
+      "sourceRef": "演示评审 rev-b"
+    },
+    {
+      "id": "act-106",
+      "projectId": "proj-workboard",
+      "taskId": "task-display-board",
+      "kind": "status_change",
+      "actor": "Owner-Demo",
+      "at": "2026-11-11T09:30:00+08:00",
+      "summary": "业务状态更新为待合入；采纳决定尚未记录。",
+      "sourceRef": "演示状态记录"
+    },
+    {
+      "id": "act-201",
+      "projectId": "proj-workboard",
+      "taskId": "task-candidate-evidence",
+      "kind": "execution_report",
+      "actor": "Agent-Super-2",
+      "at": "2026-11-10T19:30:00+08:00",
+      "summary": "提交候选 C；之后新增证据分区布局。",
+      "sourceRef": "演示执行记录 exec-c"
+    },
+    {
+      "id": "act-202",
+      "projectId": "proj-workboard",
+      "taskId": "task-candidate-evidence",
+      "kind": "review",
+      "actor": "Reviewer-Demo-2",
+      "at": "2026-11-10T20:00:00+08:00",
+      "summary": "针对旧 SHA 评审通过，新 SHA 尚未复审。",
+      "sourceRef": "演示评审 rev-c"
+    },
+    {
+      "id": "act-203",
+      "projectId": "proj-workboard",
+      "taskId": "task-candidate-evidence",
+      "kind": "status_change",
+      "actor": "Agent-Super-2",
+      "at": "2026-11-11T08:15:00+08:00",
+      "summary": "候选 SHA 更新；评审结论标记为过期。",
+      "sourceRef": "演示状态记录"
+    },
+    {
+      "id": "act-301",
+      "projectId": "proj-workboard",
+      "taskId": "task-empty-evidence",
+      "kind": "blocked",
+      "actor": "Agent-Local-2",
+      "at": "2026-11-10T16:40:00+08:00",
+      "summary": "缺少验收条件文案，执行暂停；尚无验证与评审证据。",
+      "sourceRef": "演示执行记录 exec-d"
+    },
+    {
+      "id": "act-401",
+      "projectId": "proj-docs-portal",
+      "taskId": "task-status-filter",
+      "kind": "execution_report",
+      "actor": "Agent-Super-3",
+      "at": "2026-11-11T07:05:00+08:00",
+      "summary": "开始实现状态筛选与项目切换。",
+      "sourceRef": "演示执行记录 exec-e"
+    },
+    {
+      "id": "act-501",
+      "projectId": "proj-docs-portal",
+      "taskId": "task-narrow-reading",
+      "kind": "review",
+      "actor": "Reviewer-Demo-1",
+      "at": "2026-11-10T17:50:00+08:00",
+      "summary": "评审通过当前 SHA；窄屏与空状态检查完成。",
+      "sourceRef": "演示评审 rev-f"
+    },
+    {
+      "id": "act-502",
+      "projectId": "proj-docs-portal",
+      "taskId": "task-narrow-reading",
+      "kind": "adoption",
+      "actor": "Owner-Demo",
+      "at": "2026-11-10T18:15:00+08:00",
+      "summary": "采用候选 F，记录演示合入依据。",
+      "sourceRef": "演示采纳记录 adopt-f"
+    },
+    {
+      "id": "act-503",
+      "projectId": "proj-docs-portal",
+      "taskId": "task-narrow-reading",
+      "kind": "status_change",
+      "actor": "Owner-Demo",
+      "at": "2026-11-10T18:20:00+08:00",
+      "summary": "业务状态更新为完成。",
+      "sourceRef": "演示状态记录"
+    },
+    {
+      "id": "act-601",
+      "projectId": "proj-docs-portal",
+      "taskId": "task-future-actions",
+      "kind": "status_change",
+      "actor": "Owner-Demo",
+      "at": "2026-11-09T10:00:00+08:00",
+      "summary": "记录后续管理操作边界；计划尚未批准。",
+      "sourceRef": "演示计划草案 draft-v0"
+    }
+  ]
+}

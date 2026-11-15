@@ -1,0 +1,14 @@
+{
+  "name": "站点状态页",
+  "environment": "Node.js 24, npm",
+  "repositories": [
+    {
+      "repoId": "status-page",
+      "name": "站点状态页",
+      "repositoryUrl": "https://github.com/your-account/status-page",
+      "baseline": "main",
+      "environmentRef": "node24",
+      "verifyCommand": "npm run check"
+    }
+  ]
+}

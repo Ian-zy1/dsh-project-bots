@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>站点状态页</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
+<body>
+<header class="masthead"><a class="brand" href="/">站点状态页</a><span>本地演示</span></header>
+<main>
+  <header class="intro"><h1>服务状态</h1><p id="overall" aria-live="polite">正在读取服务状态…</p></header>
+  <div class="layout">
+    <section aria-labelledby="services-title"><h2 id="services-title">最近 14 天</h2><div id="services"></div><p class="legend">左侧为最早日期 · 右侧为今天（UTC）</p></section>
+    <section class="side" aria-labelledby="form-title"><h2 id="form-title">发布事件</h2>
+      <form><label>影响服务<select name="service" required></select></label><label>影响程度<select name="impact"><option value="degraded">服务降级</option><option value="outage">服务中断</option></select></label>
+      <label>事件标题<input name="title" maxlength="90" required></label><button type="submit" disabled>发布事件</button><output id="feedback" aria-live="polite"></output></form>
+    </section>
+    <section class="history" aria-labelledby="history-title"><h2 id="history-title">事件历史</h2><ul id="records"></ul></section>
+  </div>
+</main>
+</body></html>

@@ -1,0 +1,4 @@
+interface:
+  display_name: "DSH Superagent Owner"
+  short_description: "接入 DSH 项目，形成计划和固定快照，经授权派活并复审候选"
+  default_prompt: "使用 $dsh-sa 处理当前项目需求，先形成计划和 AW 快照，等我确认后再派活。"
