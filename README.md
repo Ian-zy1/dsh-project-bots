@@ -6,7 +6,9 @@ One bot per project. Delegate approved work to DeepSeek Harness Superagent and r
 
 我给每个业务项目配一个 Bot，就像给自己多了一个项目分身。我定方向、确认方案。Bot 接下任务，由 Superagent 在项目的工作区实现、测试和评审。结果回到发起需求的 Codex 会话，我看候选和证据，再决定是否合入。
 
-[看一条真实需求](docs/example.md) · [看架构与部署](docs/architecture.md)
+![架构动图，确认需求后按项目派活，两个 Bot 各自执行，交付回到对应的原 Codex 会话](docs/assets/project-bots-flow.gif)
+
+[静态架构图](docs/assets/project-bots-flow.png) · [安装指南](docs/install.md) · [真实案例](docs/example.md) · [部署边界与交接时序](docs/architecture.md)
 
 ## 两个项目，两种尝试
 
@@ -27,6 +29,6 @@ One bot per project. Delegate approved work to DeepSeek Harness Superagent and r
 
 ## 当前版本
 
-仓库当前公开项目介绍、架构和真实案例，可安装版本正在准备。公开案例中的新版自动接单作为机制示意。实验项目已完成真实需求的固定快照、隔离实施、独立评审和原会话复审。[部署说明](docs/architecture.md#部署方式)
+仓库提供可安装候选源码、Compose、Owner Skill 与演示项目。Mac Apple Silicon 和 Linux x86_64 已通过基础安装，验证了服务启动、DSH 读取 AW 和重启后的数据保留。本次发布候选的真实首单闭环待验收。首页动图取材于两个已完成的实验案例，以并排方式展示独立项目路径。[安装指南](docs/install.md)
 
 本项目是对 DeepSeek Harness Superagent 的独立扩展。各组件和第三方依赖的许可见相应源码和发布说明。
