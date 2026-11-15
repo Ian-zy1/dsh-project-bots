@@ -10,14 +10,6 @@ An exploration of DeepSeek Harness Superagent with one Bot per project and deliv
 
 [静态架构图](docs/assets/project-bots-flow.png) · [安装指南](docs/install.md) · [部署边界与交接时序](docs/architecture.md)
 
-## 一条需求怎么走
-
-给订单列表增加按订单号搜索。动图从页面效果开始，跟着同一条需求经过快照、派活、实现、独立评审和 Owner 复审。订单和页面均为演示数据。
-
-![订单搜索演示：从页面效果跟到原 Owner 会话](docs/assets/order-search-demo.gif)
-
-[静态分镜](docs/assets/order-search-storyboard.png) · [站点状态页真实交付记录](docs/example.md#站点状态页真实交付)
-
 一个 Bot 对应一个业务项目。项目里的前端、后端可以各用自己的仓库和工具链，任务按批准版本选仓。
 
 ## 在 Superagent 上扩展了什么
