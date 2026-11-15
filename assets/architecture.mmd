@@ -1,0 +1,45 @@
+---
+config:
+  theme: base
+  themeVariables:
+    fontFamily: "Inter, PingFang SC, Noto Sans CJK SC, sans-serif"
+    fontSize: "18px"
+    lineColor: "#536982"
+    textColor: "#12233e"
+    edgeLabelBackground: "#f6f8fc"
+  flowchart:
+    htmlLabels: true
+    nodeSpacing: 46
+    rankSpacing: 54
+---
+flowchart LR
+  subgraph MAC["Owner 电脑"]
+    direction TB
+    U["你 · 批准需求"] --> O["原 Codex 会话"]
+    O <-->|登记与接续| R["Owner Relay"]
+  end
+
+  F["飞书原话题"]
+
+  subgraph CLOUD["云端实验部署"]
+    direction TB
+    S["DSH Superagent"]
+    A["AW · 固定任务与证据"]
+    G["业务 Git 仓库"]
+    S -->|按版本读任务| A
+    S -->|检出固定基线| G
+  end
+
+  O -->|派活| F
+  R <-->|接续事件与复审回报| F
+  F <-->|派活与执行回报| S
+  O -.->|存快照与评审证据| A
+
+  classDef people fill:#eaf2ff,stroke:#6387bb,color:#10294c,stroke-width:1.3px
+  classDef transport fill:#fff2dc,stroke:#bd9561,color:#503512,stroke-width:1.3px
+  classDef cloud fill:#ecf5ee,stroke:#6e9d80,color:#193d2c,stroke-width:1.3px
+  class U,O,R people
+  class F transport
+  class A,S,G cloud
+  style MAC fill:#f6f9fe,stroke:#bdcde4,color:#294563
+  style CLOUD fill:#f7faf8,stroke:#b9cfbf,color:#294c38

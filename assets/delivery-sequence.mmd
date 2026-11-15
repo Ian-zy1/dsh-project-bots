@@ -1,0 +1,47 @@
+---
+config:
+  theme: base
+  themeVariables:
+    fontFamily: "Inter, PingFang SC, Noto Sans CJK SC, sans-serif"
+    fontSize: "16px"
+    primaryColor: "#eaf2ff"
+    primaryBorderColor: "#768ea9"
+    primaryTextColor: "#12233e"
+    lineColor: "#536982"
+  sequence:
+    useMaxWidth: false
+    mirrorActors: false
+    messageFontSize: 16
+---
+sequenceDiagram
+  actor U as 用户
+  participant O as 原 Codex · Owner
+  participant A as AW 快照
+  participant F as 飞书原话题
+  participant D as DSH Superagent
+  participant R as 本机 Relay
+
+  U->>O: 提需求并确认范围
+  O->>A: 固定任务版本、基线与验收
+  O->>R: 登记原会话和已批准版本
+  O->>F: 发送任务引用
+  F-->>O: 返回消息回执
+  O->>R: 保存原消息 ID，结束本轮
+  F->>D: 项目 Bot 收到派活
+
+  alt DSH 接单
+    D->>F: 原生 Outbox 回报 Ticket
+    F->>R: 接单事件
+    Note over R: 匹配原消息和任务版本，绑定 Ticket
+    D->>A: 按固定版本读取任务
+    Note over D: 实现、验证、独立评审
+    D->>F: 交付候选 SHA
+    F->>R: 交付事件
+    R->>O: 接回原会话
+    Note over O: 核对实际 diff、验收与证据
+    O->>A: 保存 Owner 复审
+    O->>R: 登记复审回执
+    R->>F: 复审结论回原话题
+  else DSH 明确拒绝或评估超时
+    D->>F: 说明未接单原因
+  end
