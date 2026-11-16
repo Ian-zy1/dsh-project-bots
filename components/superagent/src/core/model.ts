@@ -222,7 +222,7 @@ export interface Assignment {
   startedAt?: string
   endedAt?: string
   endedReason?: string
-  report?: { state: ReportState; summary: string; at: string; candidateSha?: string }
+  report?: { state: ReportState; summary: string; at: string; candidateSha?: string; reviewSessionId?: string }
   /** When Inputs last reached the worker; one at or after `report.at` means the worker has been busy with Inputs since that report. */
   deliveredAt?: string
   /**
@@ -312,7 +312,12 @@ export interface Ticket {
  * Thread closed; the ticket then ends unless its work has not finished (see `Tickets.unfinished`).
  */
 export interface Follow { thread: string; own: boolean; closed?: { at: string; outcome: 'merged' | 'closed' } }
-export interface Execution { name: string; directory: string; assignment: string; aw?: AwContext }
+export interface Execution { name: string; directory: string; assignment: string; aw?: AwContext; imDirect?: ImDirectContext }
+export interface ImDirectContext {
+  scope: string; branch: string; baseSha: string; workspacePrepared?: true
+  author: { name: string; email: string }
+  repository: NonNullable<AwContext['repository']>
+}
 /** Fixed external background and optional per-ticket execution binding; contains no credentials. */
 export interface AwContext {
   taskId: string; revision: number; phase: 'plan' | 'implement'; scope: string; service: string; digest: string
@@ -323,7 +328,7 @@ export interface AwContext {
   project: { id: string; name?: string; revision: number; repositoryUrl: string; baseline: string; environment: string; rules: string
     repositories?: { repoId: string; name: string; responsibility: string; repositoryUrl: string; baseline: string; environmentRef: string; verifyCommand: string }[]
     architectureRef?: { repoId: string; commitSha: string; path: string } | null }
-  repository?: { repoId: string; cloneUrl: string; environmentRef: string; path: string[]; executables: string[]; variables: Record<string, string>; account: string }
+  repository?: { repoId: string; cloneUrl: string; environmentRef: string; path: string[]; executables: string[]; variables: Record<string, string>; account?: string; provider?: 'github' | 'gitlab' }
 }
 
 /** Whether a ticket is open: it has not ended. */

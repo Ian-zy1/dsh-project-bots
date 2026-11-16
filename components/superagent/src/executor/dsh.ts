@@ -13,9 +13,10 @@ import type { Settings } from '../policy.ts'
 import type { Store } from '../app/store.ts'
 import { Later, type Effects } from '../app/effects.ts'
 import { executionRoot, type Variable } from '../app/execution-environment.ts'
+import { directWorkInstructions } from '../app/im-direct.ts'
 import { AwProjectMismatch, awDispatchRequest, awInstructions, prepareAwWorkspace, verifyAwToolchain, verifyAwWorkspace } from '../app/aw.ts'
 import { repositoryEnvironment } from '../app/execution-environment.ts'
-import type { AwContext } from '../core/index.ts'
+import type { AwContext, ImDirectContext } from '../core/index.ts'
 import type { Sessions } from '../app/sessions.ts'
 import { WorktreeNameSchema } from '../app/assessment.ts'
 import { resultRelay, workerFailureNotice } from '../app/notices.ts'
@@ -82,8 +83,9 @@ export interface ExecutorHost {
   paused(): boolean
   /** Execution environment variables for `ticket`, passed to its workspace prepare command. */
   environment(ticket: Ticket): Variable[]
-  externalTask?(ticket: Ticket): Promise<AwContext | undefined>
+  externalTask?(ticket: Ticket): Promise<AwContext | ImDirectContext | undefined>
   verifyRepository?(aw: AwContext): void
+  verifyDirectWork?(work: ImDirectContext, ticket: Ticket): void
   sourceLink(trigger: Trigger, signal?: AbortSignal): Promise<{ source_url?: string; source_url_read?: string }>
   /** Stored Trigger of the message `trigger` replies to, when it replies to one. */
   repliedTo(trigger: Trigger): Trigger | undefined
@@ -470,41 +472,47 @@ export class DshExecutor implements Executor {
     const source = sourceTrigger(this.host, ticket)
     const workspace = ticket.execution?.directory ?? ''
     if (!current()) return
-    if (this.host.externalTask && !ticket.execution?.aw) {
-      const aw = await this.host.externalTask(ticket)
+    if (this.host.externalTask && !ticket.execution?.aw && !ticket.execution?.imDirect) {
+      const task = await this.host.externalTask(ticket)
       if (!current()) return
-      if (aw) this.host.store.atomic(() => {
+      if (task) this.host.store.atomic(() => {
         const saved = this.host.store.tickets.get(ticket.id)!
-        saved.execution = { ...saved.execution!, aw, assignment: `${saved.execution!.assignment}\n${awInstructions(aw, saved.id)}`.trim() }
+        const context = 'phase' in task ? { aw: task } : { imDirect: task }
+        const instructions = 'phase' in task ? awInstructions(task, saved.id) : directWorkInstructions(task)
+        saved.execution = { ...saved.execution!, ...context, assignment: `${saved.execution!.assignment}\n${instructions}`.trim() }
         this.host.store.tickets.save(saved)
         ticket = saved
       })
     }
-    const aw = ticket.execution?.aw
-    if (aw) {
-      this.host.verifyRepository?.(aw)
-      if (aw.repository) await verifyAwToolchain(aw.repository)
-      if (aw.workspacePrepared && (aw.repository || this.host.machine.awProjectId)) {
+    const { aw, imDirect } = ticket.execution ?? {}
+    const checkout = imDirect ?? aw
+    const sourceName = imDirect ? 'IM direct' : 'AW'
+    if (checkout) {
+      if (aw) this.host.verifyRepository?.(aw)
+      if (imDirect) this.host.verifyDirectWork?.(imDirect, ticket)
+      if (checkout.repository) await verifyAwToolchain(checkout.repository, sourceName)
+      if (checkout.workspacePrepared && (checkout.repository || this.host.machine.awProjectId)) {
         const signal = AbortSignal.any([this.host.lifetime, AbortSignal.timeout(PREPARE_TIMEOUT_MS)])
         const env = { ...Object.fromEntries(this.host.environment(ticket).map(variable => [variable.key, variable.value])), ...repositoryEnvironment(ticket) }
-        await verifyAwWorkspace(this.host.context.subprocess, workspace, `codex/${ticket.execution!.name}`, aw.baseSha, env, signal)
+        await verifyAwWorkspace(this.host.context.subprocess, workspace, `codex/${ticket.execution!.name}`, checkout.baseSha, env, signal, sourceName)
       }
       if (!current()) return
     }
     // Repository-bound tasks let the native AW checkout prepare the selected repository.
     if (!await stat(workspace).then(() => true, () => false)) {
-      if (aw?.repository) await mkdir(workspace, { recursive: true })
+      if (checkout?.repository) await mkdir(workspace, { recursive: true })
       else await this.prepareDirectory(ticket)
       if (!current()) return
     }
     if (!current()) return
-    if (aw && !aw.workspacePrepared) {
+    if (checkout && !checkout.workspacePrepared) {
       const signal = AbortSignal.any([this.host.lifetime, AbortSignal.timeout(PREPARE_TIMEOUT_MS)])
       const env = { ...Object.fromEntries(this.host.environment(ticket).map(variable => [variable.key, variable.value])), ...repositoryEnvironment(ticket) }
-      await prepareAwWorkspace(this.host.context.subprocess, workspace, `codex/${ticket.execution!.name}`, aw.baseSha, env, signal)
+      await prepareAwWorkspace(this.host.context.subprocess, workspace, `codex/${ticket.execution!.name}`, checkout.baseSha, env, signal, sourceName)
       this.host.store.atomic(() => {
         const saved = this.host.store.tickets.get(ticket.id)!
-        saved.execution!.aw!.workspacePrepared = true
+        const prepared = saved.execution!.imDirect ?? saved.execution!.aw!
+        prepared.workspacePrepared = true
         this.host.store.tickets.save(saved)
         ticket = saved
       })

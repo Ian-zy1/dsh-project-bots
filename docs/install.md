@@ -74,3 +74,31 @@ OWNER_RELAY_CONFIG=/absolute/private/relay.json node components/owner-relay/cli.
 ## 用首单验收
 
 在演示仓库的新 Codex 会话用 `$dsh-sa` 提出「已恢复事件显示从开始到恢复的时长，未恢复显示持续中」。确认实施计划和 AW 快照后派活。依次核对接单、同一个 SHA 的候选和独立评审、原 Codex 会话实际接手，以及原飞书话题的最终复审。Owner 在项目工作区启动候选页面，对照演示数据后再决定是否合入。
+
+### 飞书直办
+
+在 `instance.json` 的 `superagent` 中添加下面的 `imDirect` 配置。它绑定一位飞书发起人、一个 Git 仓库及其默认开发分支和工具链。实例可只配置直办 Git 仓库。已有原生 GitHub/GitLab Source 时，直办必须使用同一个仓库，Worker 使用 Git 候选交付。已有 AW 仓库绑定可以继续使用。
+
+```json
+{
+  "imDirect": {
+    "senderId": "ou_replace",
+    "repositoryUrl": "https://github.com/example/project.git",
+    "provider": "github",
+    "branch": "main",
+    "environmentRef": "node",
+    "environment": {
+      "path": ["/usr/local/bin"],
+      "executables": ["node", "npm"]
+    },
+    "author": {
+      "name": "Your Name",
+      "email": "you@example.com"
+    }
+  }
+}
+```
+
+`senderId` 是当前项目 Bot 应用视角下你的飞书 open_id，同时需要出现在该实例的飞书 Policy 允许名单。私库通过 `credentialFile` 引用容器内私有文件，使用对该仓库**只有读权限**的凭据，远端合入由你使用自己的账户完成。
+
+群内点选真正的 `@项目Bot`，紧接着发 `直接做：需求内容`，单聊从 `直接做：` 开始即可。新需求用新的群话题，原话题用于该 Ticket 的澄清、停止和返工。DSH 固定分支当时的提交，创建本地候选并在同一话题回报测试和独立评审结果。候选保留在 DSH Ticket 的工作区，可在 DSH 查看，合入需要你另行决定。直办无需 AW 和 Relay。

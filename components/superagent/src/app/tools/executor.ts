@@ -1,6 +1,6 @@
 /** Executor Session tools for reading ticket context, acknowledging requests, managing threads, handing back out-of-scope triggers, and reporting status. */
 import { z } from 'zod'
-import { liveTicket, type EngineForExecutor, type Ticket } from '../../core/index.ts'
+import { latestAssignment, liveTicket, type EngineForExecutor, type Ticket } from '../../core/index.ts'
 import { IM_WORDS } from '../../infra/text.ts'
 import { claimMergeRequest, readMergeRequest } from '../../sources/gitlab-pull.ts'
 import { claimPull, readPull } from '../../sources/github-pull.ts'
@@ -20,6 +20,7 @@ export interface ExecutorToolsHost {
   readonly github: SourceContext
   readonly gitlab?: SourceContext
   sendReplies(): Promise<void>
+  verifyDirectCandidate?(ticket: Ticket, candidate: string, reviewId: string, signal: AbortSignal): Promise<void>
   ownerReportEnabled?(ticket: Ticket): boolean
   publishOwnerReport?(ticket: Ticket): void
 }
@@ -81,6 +82,7 @@ export function executorTools(host: ExecutorToolsHost, ticket: Ticket): Tool[] {
       schema: z.object({
         state: z.enum(['progress', 'ready', 'blocked', 'failed', 'dropped']),
         candidate_sha: z.string().regex(/^[a-f0-9]{40}$/).optional().describe('Full committed candidate SHA. Required for ready on repository-bound or Owner-report-enabled AW implementation tickets.'),
+        review_session_id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/).optional().describe('For Feishu direct work: the independent native reviewer session that accepted candidate_sha.'),
         summary: z.string().min(1),
         human_action: z.string().trim().min(1).max(1000).nullish().describe('One concrete question for a person, also with state=progress; omit to keep the pending one, null to clear it.'),
         question_for_trigger_id: z.string().optional().describe('With human_action: the human message that raised the question, which is asked where that person wrote.'),
@@ -91,21 +93,32 @@ export function executorTools(host: ExecutorToolsHost, ticket: Ticket): Tool[] {
       execute: async (args, signal) => {
         const current = host.store.tickets.get(ticketId)
         if (!current || !liveTicket(current)) throw new Error('Ticket ended (PR was closed or work finished); do not resume it')
-        if (current.execution?.aw?.repository && (args.pr_number != null || args.mr_iid != null))
-          throw new Error('Repository-bound AW tickets deliver a local candidate SHA without PR/MR reporting')
+        if ((current.execution?.imDirect || current.execution?.aw?.repository) && (args.pr_number != null || args.mr_iid != null))
+          throw new Error('Git-only tickets deliver a local candidate SHA without PR/MR reporting')
         if (args.state === 'ready' && !args.candidate_sha && (host.ownerReportEnabled?.(current)
           || (current.execution?.aw?.repository && current.execution.aw.phase === 'implement')))
           throw new Error('Report ready with candidate_sha: the full candidate commit SHA for Owner review')
+        if (current.execution?.imDirect && args.state === 'ready') {
+          if (!args.candidate_sha || !args.review_session_id || !host.verifyDirectCandidate)
+            throw new Error('Feishu direct work requires a committed candidate_sha and an independent review_session_id')
+          await host.verifyDirectCandidate(current, args.candidate_sha, args.review_session_id, signal)
+        }
         if (args.pr_number != null && !host.github.deployment.github) throw new Error('Use mr_iid on GitLab deployments')
         if (args.mr_iid != null && !host.gitlab?.deployment.gitlab) throw new Error('GitLab MR reporting requires the optional GitLab API integration; omit mr_iid for Git-only delivery.')
         const merge = args.mr_iid != null ? await readMergeRequest(host.gitlab!, args.mr_iid, signal) : undefined
         const pull = args.pr_number != null ? await readPull(host.github, args.pr_number, signal) : undefined
         // Claim the PR, record the report, and queue the relay atomically so a rejected PR claim or invalid report leaves no partial state, and a recorded report always reaches the main Session.
         return host.store.atomic(() => {
+          if (current.execution?.imDirect && args.state === 'ready') {
+            const now = host.store.tickets.get(ticketId)
+            if (!now || !liveTicket(now) || latestAssignment(now)?.id !== latestAssignment(current)?.id)
+              throw new Error('Ticket changed during candidate verification')
+          }
           const refused = merge ? claimMergeRequest(host.gitlab!, ticketId, merge) : pull && claimPull(host.github, ticketId, pull)
           if (refused) throw new Error(refused)
           const report = { state: args.state, summary: args.summary, ...(args.human_action !== undefined ? { question: args.human_action } : {}),
             ...(args.candidate_sha ? { candidateSha: args.candidate_sha } : {}),
+            ...(current.execution?.imDirect && args.state === 'ready' ? { reviewSessionId: args.review_session_id! } : {}),
             ...(args.question_for_trigger_id ? { askedBy: args.question_for_trigger_id } : {}),
             ...(args.reply_to_trigger_id ? { answers: args.reply_to_trigger_id } : {}) }
           const updated = host.engine.report(ticketId, report)

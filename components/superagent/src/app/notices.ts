@@ -6,7 +6,7 @@ import type { SourceRegistry } from '../sources/registry.ts'
 import { repliedTo } from './links.ts'
 import type { Store } from './store.ts'
 import { ticketCard } from './cards.ts'
-import { awRequest, type AwProjectMismatch } from './aw.ts'
+import { awDispatchRequest, type AwProjectMismatch } from './aw.ts'
 
 /**
  * A background notice tuple for the main Session: `[name, value, summary]`, where `name` is the coalescing key in
@@ -14,10 +14,14 @@ import { awRequest, type AwProjectMismatch } from './aw.ts'
  */
 export type Notice = readonly [name: string, value: Record<string, unknown>, summary: string]
 /** An explicit AW dispatch can time out before any Ticket or Worker exists. */
-export function dispatchTimeoutNotice(decisionId: string, origin: Trigger | undefined): OutboundMessage | undefined {
+export function dispatchTimeoutNotice(decisionId: string, origin: Trigger | undefined, imDirect = false): OutboundMessage | undefined {
   if (!origin?.human || !origin.addressed || !origin.channel || !['feishu', 'dingtalk'].includes(origin.channel.source)) return undefined
-  let request: ReturnType<typeof awRequest>
-  try { request = awRequest(origin.text) } catch { return undefined }
+  if (imDirect && origin.channel.source === 'feishu' && typeof origin.meta.directScope === 'string') return {
+    id: key('dispatch-timeout', decisionId, origin.id), channel: origin.channel, kind: 'notice',
+    text: '直办请求接单超时，未创建 Ticket，Worker 未启动。服务恢复后请先核对原话题再重试。',
+  }
+  let request: ReturnType<typeof awDispatchRequest>
+  try { request = awDispatchRequest(origin) } catch { return undefined }
   if (!request) return undefined
   const chinese = /\p{Script=Han}/u.test(request.scope) && !/\p{Script=Hiragana}|\p{Script=Katakana}/u.test(request.scope)
   return {

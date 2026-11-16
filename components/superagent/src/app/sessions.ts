@@ -12,6 +12,7 @@ import type { HealthEntry } from '../infra/health.ts'
 import { AgentDelivery, messageId } from './delivery.ts'
 import type { Effects } from './effects.ts'
 import { repositoryEnvironment, type Variable } from './execution-environment.ts'
+import { directWorkInstructions } from './im-direct.ts'
 import { awInstructions } from './aw.ts'
 import { RetryHealth } from './retry-health.ts'
 import { initializeRoleModel } from './role-models.ts'
@@ -44,7 +45,7 @@ export interface SessionsHost {
  * What Sessions registered for an agent it decorated: the releases of its prompt section, tools and skill scope, the scope
  * its skills are registered in, and the skills of one prompt revision; for a worker's subagent, only its tool limits.
  */
-interface SessionBinding { disposers: (() => void)[]; scope?: Context; skills?: { revision: number; dispose: () => void }; subagent?: true }
+interface SessionBinding { disposers: (() => void)[]; scope?: Context; skills?: { revision: number; dispose: () => void }; subagent?: true; gitOnly?: boolean }
 
 /** The agent presets Executor Sessions and the main Session are created with, which the bundle's patch defines. */
 export const WORKER_PRESET = 'dsh-superagent-worker', ROUTER_PRESET = 'dsh-superagent-router'
@@ -237,7 +238,7 @@ export class Sessions {
     const master = agent.id === host.masterId
     const ticket = master ? undefined : this.ticketOf(agent)
     if (!master && !ticket) { this.limitSubagent(agent); return }
-    const binding: SessionBinding = { disposers: [] }
+    const binding: SessionBinding = { disposers: [], gitOnly: host.gitOnly?.() || !!(ticket?.execution?.imDirect || ticket?.execution?.aw?.repository?.provider) }
     this.bindings.set(agent, binding)
     this.retryHealth.restore(agent.id, agent.session.snapshotEvents())
     if (agent.status === 'idle') this.retryHealth.clear(agent.id)
@@ -248,7 +249,8 @@ export class Sessions {
       const current = ticket && host.store.tickets.get(ticket.id)
       const composed = host.prompts.compose(version.config, master ? 'orchestrator' : 'worker', current ? host.environment(current) : undefined)
       return `[dsh-superagent prompt revision ${version.revision}]\n${composed}\n${current ? mandateInstructions(current.mandate) : ''}`
-        + (host.gitOnly?.() ? '\nGit-only mode (overrides default code-host delivery instructions): GitLab API/Issue/MR and glab are not enabled. For new development require a fixed AW task reference and explicit phase/scope. Workers read code from their prepared Git checkout. Deliver branch, full candidate SHA and verification/review evidence through orchestrator_report without requiring an MR. Do not ask for an API token, fabricate an API identity, merge or deploy. Report blockers through the original IM channel.\n' : '')
+        + (binding.gitOnly ? '\nGit-only mode (overrides default code-host delivery instructions): Use the prepared Git checkout. Platform API operations (Issue, PR, MR) are not enabled for this work. Follow the authorization and scope recorded for the specific Ticket. Workers read code from their prepared Git checkout. Deliver branch, full candidate SHA and verification/review evidence through orchestrator_report without requiring an MR. Do not ask for an API token, fabricate an API identity, merge or deploy. Report blockers through the original IM channel.\n' : '')
+        + (current?.execution?.imDirect ? `\nTicket-specific authorization (takes precedence over default delivery instructions):\n${directWorkInstructions(current.execution.imDirect)}` : '')
         + (current?.execution?.aw ? `\nTicket-specific authorization (takes precedence over default delivery instructions):\n${awInstructions(current.execution.aw, current.id)}` : '')
     }, ...(master ? { complete: true } : {}) }))
     // A recreated skill scope (e.g. after the skills service restarts) starts empty, so reset `binding.skills` before rebinding.
@@ -298,7 +300,8 @@ export class Sessions {
       const current = store.tickets.get(ticketId)
       return !current || !liveTicket(current) ? 'Ticket ended; new work needs a new authorized ticket' : undefined
     })]
-    if (store.tickets.get(ticketId)?.execution?.aw?.repository) {
+    const execution = store.tickets.get(ticketId)?.execution
+    if (execution?.imDirect || execution?.aw?.repository) {
       for (const name of ['bash', 'pwsh']) {
         const original = agent.ctx.tools.get(name, parent)
         if (!original) continue
@@ -339,6 +342,7 @@ export class Sessions {
     previous?.dispose()
     const disposers: (() => void)[] = []
     for (const [name, content] of this.host.prompts.skills(version.config)) {
+      if (binding.gitOnly && (name === 'github' || name === 'gitlab')) continue
       const bundled = name === 'feishu' || name === 'github' ? bundledSkills[name] : undefined
       const body = version.config.skills[name] ?? ''
       const description = bundled?.description ?? (body.replace(/\s+/g, ' ').slice(0, 120) || 'Custom dsh-superagent operational skill.')

@@ -40,7 +40,9 @@ it.each(['http', 'https'] as const)('uses explicitly configured %s for API, clon
   expect(readFileSync(join(dir, 'worker-bin/glab'), 'utf8')).toContain(`GLAB_API_PROTOCOL='${protocol}'`)
 })
 
-it.each([false, true])('reads AW and prepares real HTTP Git with git-only=%s', async gitOnly => {
+it.each(['api', 'gitlab-legacy', 'github', 'gitlab'] as const)('reads AW and prepares a real HTTP Git checkout (%s)', async mode => {
+  const provider = mode === 'github' || mode === 'gitlab' ? mode : undefined
+  const gitOnly = mode !== 'api'
   const dir = temporary(), seed = join(dir, 'seed'), bare = join(dir, 'repo.git'), work = join(dir, 'work')
   mkdirSync(seed); mkdirSync(work)
   // The test uses no user git configuration, identity or credentials.
@@ -62,7 +64,9 @@ it.each([false, true])('reads AW and prepares real HTTP Git with git-only=%s', a
       res.setHeader('Content-Type', 'application/json')
       if (url.pathname.endsWith('/brief')) return res.end(JSON.stringify({ snapshot: { taskId: task.id, revision: 3, projectRevision: 2, requirementRevision: 4, digest: 'd'.repeat(64) }, current: { revision: 99 } }))
       const section = url.searchParams.get('section')
-      return res.end(JSON.stringify({ taskId: task.id, revision: 3, section, content: section === 'task' ? task : section === 'project' ? project() : { id: 'req_demo', revision: 4, plan: 'Approved fixture plan' } }))
+      return res.end(JSON.stringify({ taskId: task.id, revision: 3, section, content: section === 'task' ? (provider ? { ...task,
+        projectRevision: 2, requirementRevision: 4, repoId: 'demo', repositoryUrl: cloneUrl,
+        baseSha, environmentRef: 'fixture', verifyCommand: 'git status' } : task) : section === 'project' ? project() : { id: 'req_demo', revision: 4, plan: 'Approved fixture plan' } }))
     }
     if (gitOnly && req.headers.authorization !== 'Basic ' + Buffer.from('fixture:fixture-pass').toString('base64')) {
       res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="git-fixture"' }); return res.end()
@@ -78,7 +82,11 @@ it.each([false, true])('reads AW and prepares real HTTP Git with git-only=%s', a
   cloneUrl = `http://${host}/team/sub/repo.git`
   const credentialFile = join(dir, 'git-credentials')
   writeFileSync(credentialFile, `http://fixture:fixture-pass@${host}/team/sub/repo.git\n`, { mode: 0o600 })
-  const deployment: Deployment = gitOnly ? await resolveGitlabDeployment(testMachine({ stateDir: dir, repositoryProvider: 'gitlab' }),
+  const deployment: Deployment = provider ? {
+    ...testMachine({ stateDir: dir }), repository: '', awProjectId: 'prj_demo', awBaseUrl: `http://${host}`,
+    awRepositories: { demo: { provider, repositoryUrl: cloneUrl, credentialFile, environmentRef: 'fixture',
+      environment: { path: ['/usr/bin'], variables: {}, executables: ['git'] } } },
+  } : gitOnly ? await resolveGitlabDeployment(testMachine({ stateDir: dir, repositoryProvider: 'gitlab' }),
     { protocol: 'http', host, repository: 'team/sub/repo', apiEnabled: false, credentialFile }, async argv => {
       expect(argv[0]).toBe('git'); return (await exec(argv[0]!, argv.slice(1), { cwd: dir, env })).stdout
     }) : { ...testMachine({ stateDir: dir }), repository: 'team/sub/repo', gitlab: { protocol: 'http', cli: '/bin/false', login: 'fixture', userId: 9,
@@ -96,7 +104,14 @@ it.each([false, true])('reads AW and prepares real HTTP Git with git-only=%s', a
   expect(requests.filter(path => path.startsWith('/api/'))).toEqual([
     '/api/v1/tasks/tsk_demo/brief?revision=3', '/api/v1/tasks/tsk_demo/context?revision=3&section=project', '/api/v1/tasks/tsk_demo/context?revision=3&section=task'])
   if (!gitOnly) expect(run.mock.calls[0]![1]).toContain('projects/7/repository/commits/main')
-  else {
+  else if (provider) {
+    expect(context.repository?.provider).toBe(provider)
+    expect(run).not.toHaveBeenCalled()
+    expect(() => verifyAwBinding(context, deployment)).not.toThrow()
+    expect(() => verifyAwBinding(context, { ...deployment, awRepositories: {
+      demo: { ...deployment.awRepositories!.demo!, provider: provider === 'github' ? 'gitlab' : 'github' },
+    } })).toThrow('no longer available')
+  } else {
     expect(deployment.gitlab).toBeUndefined()
     expect(deployment.git?.defaultBranch).toBe('main')
     expect(run.mock.calls.every(([program]) => program === 'git')).toBe(true)
@@ -133,14 +148,18 @@ it('rejects unavailable Git access without falling back to API and rejects ambig
   await expect(gitBaseline(commands, 'http://git.test/team/app.git', 'release')).rejects.toThrow('identify one')
 })
 
-it('pins two repositories and toolchains through concurrent native AW checkout and recovery', async () => {
+it.each(['legacy', 'http-api', 'http-web'])('pins two repositories and toolchains through concurrent native AW checkout and recovery (%s)', async mode => {
+  const mixed = mode !== 'legacy'
   const dir = temporary()
   const env = { PATH: process.env.PATH!, HOME: dir, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
   const git = async (cwd: string, ...args: string[]) => (await exec('git', args, { cwd, env })).stdout.trim()
   let project = { id: 'prj_fixture', revision: 2, environment: '', rules: '' }
   const fixtures = await Promise.all(['api', 'web'].map(async repoId => {
     const source = join(dir, repoId), work = join(dir, `work-${repoId}`), bin = join(dir, `bin-${repoId}`)
-    const repositoryUrl = `https://github.com/example/${repoId}.git`, environmentRef = `${repoId}-v1`
+    const repositoryUrl = mixed
+      ? `${mode === `http-${repoId}` ? 'http' : 'https'}://${repoId === 'api' ? 'gitlab' : 'github'}.example/team/${repoId}.git`
+      : `https://github.com/example/${repoId}.git`
+    const environmentRef = `${repoId}-v1`
     mkdirSync(source); mkdirSync(work); mkdirSync(bin)
     writeFileSync(join(bin, 'fixture-tool'), `#!/bin/sh\nprintf '%s\\n' '${environmentRef}'\n`, { mode: 0o755 })
     await git(source, 'init', '-b', 'main')
@@ -188,10 +207,10 @@ it('pins two repositories and toolchains through concurrent native AW checkout a
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   const awBaseUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}`
   const config = { stateDir: dir, awBaseUrl, awProjectId: project.id, awRepositories: Object.fromEntries(fixtures.map(({ task, bin }) =>
-    [task.repoId, { repositoryUrl: task.repositoryUrl, environmentRef: task.environmentRef, environment: { path: [bin], executables: ['fixture-tool'] } }])) }
+    [task.repoId, { ...(mixed ? { provider: task.repoId === 'api' ? 'gitlab' : 'github' } : {}), repositoryUrl: task.repositoryUrl, environmentRef: task.environmentRef, environment: { path: [bin], executables: ['fixture-tool'] } }])) }
   const machine = machineOf(Config(config))
   expect(() => machineOf(Config({ ...config, awProjectId: '' }))).toThrow()
-  const deployment = testDeployment(machine)
+  const deployment = mixed ? { ...testDeployment(machine), repository: '', github: undefined } : testDeployment(machine)
   const client = new AwClient(machine)
   const signal = new AbortController().signal
   const commands = new Commands(() => deployment, env, signal)
@@ -206,6 +225,7 @@ it('pins two repositories and toolchains through concurrent native AW checkout a
     await expect(verifyAwToolchain({ ...context.repository!, executables: ['git'] })).rejects.toThrow('missing git')
     const ticket = { execution: { aw: context } } as Ticket
     const scoped = repositoryEnvironment(ticket)
+    if (mixed) expect(scoped.DSH_SUPERAGENT_CODE_HOST).toBe(task.repoId === 'api' ? 'gitlab' : 'github')
     expect((await exec('fixture-tool', [], { cwd: work, env: { ...env, ...scoped } })).stdout.trim()).toBe(task.environmentRef)
     // Map the allowlisted fixture URL to a real local repo at transport level.
     const configFile = join(dir, `git-${task.repoId}.config`)

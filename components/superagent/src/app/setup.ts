@@ -1,7 +1,7 @@
 /** Probes repository and account CLIs, configures the worker execution environment and command shims, and tracks setup readiness. */
 import type { Context } from '@deepseek-ai/cordis'
 import { UserError } from '../core/index.ts'
-import { SETUP_FIELDS, resolveGitlabDeployment, resolveDeployment, resolveFeishuBot, workerProbe, type Deployment, type Machine } from '../deployment.ts'
+import { cleanRepository, SETUP_FIELDS, resolveGitlabDeployment, resolveDeployment, resolveFeishuBot, workerProbe, type Deployment, type Machine } from '../deployment.ts'
 import { agentVariables, applyEnvironment, verifyEnvironment, withoutDirectory, workerBin, writeEnvironment } from '../infra/environment.ts'
 import type { Settings, SettingsBlock } from '../policy.ts'
 import { SetupError, type SetupProblem } from '../setup.ts'
@@ -12,6 +12,7 @@ export interface SetupHost {
   readonly lifetime: AbortSignal
   restart(): void
   bindRepository?(deployment: Deployment): void
+  hasLegacyTickets?(): boolean
 }
 
 const setupFields = (settings: Settings) =>
@@ -79,10 +80,21 @@ export class Setup {
   private async resolve(settings: Settings): Promise<Deployment> {
     const { context, machine, lifetime } = this.host
     const probe = this.probe()
-    const deployment = machine.repositoryProvider === 'gitlab'
-      ? await resolveGitlabDeployment(machine, settings.sources.gitlab?.config, probe)
-      : await resolveDeployment(machine, settings.sources.github?.config, probe)
-    this.host.bindRepository?.(deployment)
+    const source = machine.repositoryProvider ?? 'github'
+    const config = settings.sources[source]?.config
+    const repositories = Object.values(machine.awRepositories ?? {})
+    const routeOnly = (machine.imDirect || (repositories.length > 0 && repositories.every(repo => repo.provider)))
+      && !(config as { repository?: string } | undefined)?.repository
+    if (routeOnly && this.host.hasLegacyTickets?.()) throw new SetupError('repositoryChanged')
+    const deployment: Deployment = routeOnly ? { ...machine, repository: '' } : source === 'gitlab'
+      ? await resolveGitlabDeployment(machine, config, probe)
+      : await resolveDeployment(machine, config, probe)
+    if (machine.imDirect && deployment.repository) {
+      const nativeUrl = (deployment.gitlab ?? deployment.git)?.cloneUrl ?? `https://github.com/${deployment.repository}.git`
+      if (cleanRepository(machine.imDirect.repositoryUrl) !== cleanRepository(nativeUrl))
+        throw new SetupError('environmentFailed', { output: 'Feishu direct work must use the configured repository.' })
+    }
+    if (!routeOnly) this.host.bindRepository?.(deployment)
     const feishu = await resolveFeishuBot(machine, settings.sources.feishu?.config, probe).catch((error: unknown) => {
       if (!(error instanceof SetupError) || machine.expectedFeishuAppId) throw error
       this.feishuProblem = error.problem

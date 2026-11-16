@@ -35,7 +35,7 @@ export function awRequest(text: string): AwRequest | undefined {
   return Request.parse({ taskId: match[1], revision: Number(match[2]), phase: match[3], scope: match[4]!.trim() })
 }
 export function awDispatchRequest(trigger: Trigger): AwRequest | undefined {
-  return ['feishu', 'dingtalk'].includes(trigger.source) ? awRequest(trigger.text) : undefined
+  return ['feishu', 'dingtalk'].includes(trigger.source) && !trigger.meta.directScope ? awRequest(trigger.text) : undefined
 }
 /** Carries validated project and bot identity to the original dispatch's failure notice. */
 export class AwProjectMismatch extends Error {
@@ -53,6 +53,7 @@ export function verifyAwBinding(aw: AwContext, deployment: Deployment): void {
   if (deployment.awProjectId && (!deployment.awBaseUrl || new URL(deployment.awBaseUrl).href.replace(/\/$/, '') !== aw.service.replace(/\/$/, '')))
     throw new Error('The fixed AW service is no longer configured for this installation')
   if (!bound) {
+    if (!deployment.repository) throw new Error('Legacy AW snapshots require the original default repository settings')
     const expected = (deployment.gitlab ?? deployment.git)?.cloneUrl ?? `https://github.com/${deployment.repository}.git`
     if (cleanRepository(aw.project.repositoryUrl) !== cleanRepository(expected)
         || (deployment.awProjectId && !Object.values(deployment.awRepositories ?? {}).some(r => cleanRepository(r.repositoryUrl) === cleanRepository(expected))))
@@ -60,7 +61,8 @@ export function verifyAwBinding(aw: AwContext, deployment: Deployment): void {
     return
   }
   const entry = Object.hasOwn(deployment.awRepositories ?? {}, bound.repoId) ? deployment.awRepositories?.[bound.repoId] : undefined
-  if (deployment.awProjectId !== aw.project.id || !entry || deployment.github?.login !== bound.account
+  if (deployment.awProjectId !== aw.project.id || !entry || entry.provider !== bound.provider
+      || (!entry.provider && deployment.github?.login !== bound.account)
       || entry.environmentRef !== bound.environmentRef || cleanRepository(entry.repositoryUrl) + '.git' !== bound.cloneUrl
       || JSON.stringify(entry.environment.path) !== JSON.stringify(bound.path)
       || JSON.stringify(entry.environment.executables) !== JSON.stringify(bound.executables)
@@ -69,18 +71,18 @@ export function verifyAwBinding(aw: AwContext, deployment: Deployment): void {
 }
 
 /** Prevent a missing managed toolchain from silently selecting system executables on PATH. */
-export async function verifyAwToolchain(bound: NonNullable<AwContext['repository']>): Promise<void> {
+export async function verifyAwToolchain(bound: NonNullable<AwContext['repository']>, source = 'AW'): Promise<void> {
   const available = async (path: string, directory: boolean) => {
     await access(path, constants.X_OK)
     const info = await stat(path)
     return directory ? info.isDirectory() : info.isFile()
   }
-  if (!bound.path.length || !bound.executables?.length) throw new Error(`AW toolchain ${bound.environmentRef} has no managed tools`)
+  if (!bound.path.length || !bound.executables?.length) throw new Error(`${source} toolchain ${bound.environmentRef} has no managed tools`)
   for (const path of bound.path)
-    if (!await available(path, true).catch(() => false)) throw new Error(`AW toolchain ${bound.environmentRef} has an unavailable PATH directory`)
+    if (!await available(path, true).catch(() => false)) throw new Error(`${source} toolchain ${bound.environmentRef} has an unavailable PATH directory`)
   for (const executable of bound.executables) {
     const matches = await Promise.all(bound.path.map(path => available(join(path, executable), false).catch(() => false)))
-    if (!matches.includes(true)) throw new Error(`AW toolchain ${bound.environmentRef} is missing ${executable}`)
+    if (!matches.includes(true)) throw new Error(`${source} toolchain ${bound.environmentRef} is missing ${executable}`)
   }
 }
 /** Host-configured AW reader; it never follows a task-provided service URL or writes to AW. */
@@ -124,13 +126,14 @@ export class AwClient {
       if (task.projectRevision !== brief.snapshot.projectRevision || task.requirementRevision !== brief.snapshot.requirementRevision)
         throw new Error('AW snapshot references do not match')
       const entry = task.repoId && Object.hasOwn(deployment.awRepositories ?? {}, task.repoId) ? deployment.awRepositories?.[task.repoId] : undefined
-      if (!task.repoId || !task.repositoryUrl || !task.baseSha || !task.verifyCommand || !entry || !deployment.github || !deployment.awProjectId
+      if (!task.repoId || !task.repositoryUrl || !task.baseSha || !task.verifyCommand || !entry || (!entry.provider && !deployment.github) || !deployment.awProjectId
           || task.environmentRef !== entry.environmentRef || cleanRepository(task.repositoryUrl) !== cleanRepository(entry.repositoryUrl))
         throw new Error('AW task repository or environment does not match the configured allowlist')
       const cloneUrl = cleanRepository(entry.repositoryUrl) + '.git'
       return { ...context, baseSha: task.baseSha, repository: { repoId: task.repoId, cloneUrl, environmentRef: entry.environmentRef,
-        account: deployment.github.login, ...entry.environment } }
+        ...(entry.provider ? { provider: entry.provider } : { account: deployment.github!.login }), ...entry.environment } }
     }
+    if (!deployment.repository) throw new Error('Legacy AW snapshots require the original default repository settings')
     const expected = (deployment.gitlab ?? deployment.git)?.cloneUrl ?? `https://github.com/${deployment.repository}.git`
     if (cleanRepository(project.repositoryUrl) !== cleanRepository(expected)) throw new Error('AW project does not match this installation’s single repository')
     if (deployment.awProjectId && !Object.values(deployment.awRepositories ?? {}).some(r => cleanRepository(r.repositoryUrl) === cleanRepository(expected)))
@@ -143,7 +146,7 @@ export class AwClient {
   }
 }
 /** Resolve a fixed commit through Git only; the Executor verifies/fetches it before starting the Worker. */
-export async function gitBaseline(commands: Commands, cloneUrl: string, baseline: string): Promise<string> {
+export async function gitBaseline(commands: Commands, cloneUrl: string, baseline: string, source = 'AW'): Promise<string> {
   if (/^[a-f0-9]{40}$/.test(baseline)) return baseline
   const names = baseline === 'HEAD' || baseline.startsWith('refs/') ? [baseline] : [`refs/heads/${baseline}`, `refs/tags/${baseline}`]
   const output = await commands.run('git', ['ls-remote', '--exit-code', '--', cloneUrl, ...names, ...names.map(name => name + '^{}')])
@@ -152,22 +155,22 @@ export async function gitBaseline(commands: Commands, cloneUrl: string, baseline
     return match ? [[match[2]!, match[1]!] as const] : []
   }))
   const values = names.flatMap(name => refs.has(name) ? [refs.get(name + '^{}') ?? refs.get(name)!] : [])
-  if (values.length !== 1 || !/^[a-f0-9]{40}$/.test(values[0]!)) throw new Error('AW baseline must identify one Git branch, tag or complete commit SHA')
+  if (values.length !== 1 || !/^[a-f0-9]{40}$/.test(values[0]!)) throw new Error(`${source} baseline must identify one Git branch, tag or complete commit SHA`)
   return values[0]!
 }
 /** Prepare the native Ticket workspace at its fixed commit using the existing host subprocess service. */
 export async function prepareAwWorkspace(subprocess: SubprocessRuntime, directory: string, branch: string, baseSha: string,
-  env: Record<string, string>, signal: AbortSignal): Promise<void> {
+  env: Record<string, string>, signal: AbortSignal, source = 'AW'): Promise<void> {
   const run = (args: string[]) => runAsWorker(subprocess, ['git', ...args], directory, signal, env)
   const repository = await run(['rev-parse', '--show-toplevel']).then(value => value.trim(), () => '')
   if (!repository) await run(['clone', '--', env.DSH_SUPERAGENT_CLONE_URL!, '.'])
-  else if (!sameDirectory(repository, directory)) throw new Error('AW workspace is not the root of the selected repository')
+  else if (!sameDirectory(repository, directory)) throw new Error(`${source} workspace is not the root of the selected repository`)
   const origin = (await run(['config', '--local', '--get', 'remote.origin.url'])).trim()
-  if (origin !== env.DSH_SUPERAGENT_CLONE_URL) throw new Error('AW workspace origin differs from the configured repository')
+  if (origin !== env.DSH_SUPERAGENT_CLONE_URL) throw new Error(`${source} workspace origin differs from the configured repository`)
   const existing = await run(['rev-parse', '--verify', `refs/heads/${branch}`]).then(value => value.trim(), () => '')
   if (existing) {
     if (existing !== baseSha || (await run(['branch', '--show-current'])).trim() !== branch || (await run(['status', '--porcelain'])).trim())
-      throw new Error('AW workspace has a different or modified candidate branch')
+      throw new Error(`${source} workspace has a different or modified candidate branch`)
     await verifyDirectory(directory, subprocess, signal)
     return
   }
@@ -177,12 +180,12 @@ export async function prepareAwWorkspace(subprocess: SubprocessRuntime, director
 }
 /** A resumed ticket may have new commits, but it must retain its checkout and bound baseline. */
 export async function verifyAwWorkspace(subprocess: SubprocessRuntime, directory: string, branch: string, baseSha: string,
-  env: Record<string, string>, signal: AbortSignal): Promise<void> {
+  env: Record<string, string>, signal: AbortSignal, source = 'AW'): Promise<void> {
   const run = (args: string[]) => runAsWorker(subprocess, ['git', ...args], directory, signal, env)
   const root = (await run(['rev-parse', '--show-toplevel'])).trim()
   const origin = (await run(['config', '--local', '--get', 'remote.origin.url'])).trim()
   if (!sameDirectory(root, directory) || origin !== env.DSH_SUPERAGENT_CLONE_URL || (await run(['branch', '--show-current'])).trim() !== branch)
-    throw new Error('AW workspace no longer matches its fixed checkout')
+    throw new Error(`${source} workspace no longer matches its fixed checkout`)
   await run(['merge-base', '--is-ancestor', baseSha, 'HEAD'])
   await verifyDirectory(directory, subprocess, signal)
 }

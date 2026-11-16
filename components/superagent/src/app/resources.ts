@@ -113,8 +113,9 @@ async function sourcePage(read: Read, source: string, fetch: () => Promise<unkno
   return text(read, body)
 }
 function assertStaticRepositoryResource({ host, ticketId }: Read): void {
-  if (ticketId && host.store.tickets.get(ticketId)?.execution?.aw?.repository)
-    throw new Error('Read repository code from the fixed Git checkout of this AW ticket')
+  const execution = ticketId ? host.store.tickets.get(ticketId)?.execution : undefined
+  if (execution?.imDirect) throw new Error('Read repository code from the fixed Git checkout of this IM ticket')
+  if (execution?.aw?.repository) throw new Error('Read repository code from the fixed Git checkout of this AW ticket')
 }
 const THREAD_DECISIONS = 5
 const triggerLine = (trigger: Trigger) => ({ trigger_id: trigger.id, actor: trigger.actor.id, human: trigger.human, at: trigger.at,

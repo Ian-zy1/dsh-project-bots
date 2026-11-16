@@ -152,7 +152,7 @@ export class Evals extends EnginePart {
     if (outcome.kind === 'accept' && evaluation.strength !== 'explicit' && !this.policy().admitsInferred(outcome.rules ?? [])) {
       throw new UserError('notExplicit')
     }
-    return this.decideEval(thread, evaluation, outcome)
+    return this.decideEval(thread, evaluation, outcome, trigger)
   }
   /**
    * Queue a stored Trigger for a fresh Eval on its primary Thread and emit `trigger.requeued`; returns false while an Eval holds it.
@@ -279,7 +279,7 @@ export class Evals extends EnginePart {
       strength: gate.strength, actor: trigger.actor, basis: gate.basis, policyVersion: policy.version, startedAt: at, deadline: at }
   }
   /** Apply an outcome to an Eval of a Thread: the one in progress, or a gate-only one. */
-  private decideEval(thread: Thread, evaluation: Evaluation, outcome: AssessmentOutcome): Decision {
+  private decideEval(thread: Thread, evaluation: Evaluation, outcome: AssessmentOutcome, trigger: Trigger): Decision {
     const audit = outcome.audit ? { audit: outcome.audit } : {}
     // Requeue if Policy changed without a live policyChanged call (such as across an upgrade or restart).
     if (this.policy().version !== evaluation.policyVersion) {
@@ -294,8 +294,8 @@ export class Evals extends EnginePart {
       const ticket = this.repo.tickets.get(outcome.ticketId)
       if (!ticket || !liveTicket(ticket)) return this.finish(thread, evaluation, { kind: 'ignore', reason: [{ code: 'stopUnknown' }],
         ...audit })
-      if (evaluation.strength !== 'explicit') return this.finish(thread, evaluation, { kind: 'ignore',
-        reason: [{ code: 'stopNotExplicit' }], ...audit })
+      if (evaluation.strength !== 'explicit' || this.options.allowsFollowup?.(ticket, trigger) === false)
+        return this.finish(thread, evaluation, { kind: 'ignore', reason: [{ code: 'stopNotExplicit' }], ...audit })
       const decision = this.finish(thread, evaluation, { kind: 'stop', reason: reasonOf(outcome.reason), ticketId: ticket.id, ...audit })
       this.tickets.end(ticket.id, 'human', 'stopped', this.now(), typeof outcome.reason === 'string' ? outcome.reason : undefined)
       return decision

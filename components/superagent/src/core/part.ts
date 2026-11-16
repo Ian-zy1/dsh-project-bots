@@ -15,6 +15,8 @@ export interface EngineOptions {
   outbox: Outbox
   /** An already queued, channel-specific delivery that includes the result of this ready report. */
   readyReply?: (ticket: Ticket) => Reply | undefined
+  /** Optional ticket-specific restriction for inbound follow-ups to a managed workflow. */
+  allowsFollowup?: (ticket: Ticket, trigger: Trigger) => boolean
   prepareTicket?: (ticket: Ticket, outcome: Extract<AssessmentOutcome, { kind: 'accept' }>) => Ticket
   now?: () => string
   emit?: (event: DomainEvent) => void

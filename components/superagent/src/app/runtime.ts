@@ -3,6 +3,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import { AwClient, awDispatchRequest, verifyAwBinding } from './aw.ts'
 import { awDispatchSink } from './aw-dispatch-results.ts'
 import { dispatchResults } from './dispatch-results.ts'
+import { directReadyNotice, directWorkScope, loadDirectWork, verifyDirectCandidate, verifyDirectWork } from './im-direct.ts'
 import { ownerReports } from './owner-report.ts'
 import { ownerDispatches } from './owner-dispatch.ts'
 import { feishuOwnerDispatchNotice, feishuOwnerReportRoute } from '../sources/feishu-owner-report.ts'
@@ -103,7 +104,9 @@ export class Runtime extends Service implements SourceHost {
     try {
       const report = (error: unknown) => { ctx.logger.warn('dsh-superagent: %s', String(error)) }
       const store = opened = this.store = new Store(join(machine.stateDir, 'orchestrator.sqlite'), report)
-      const setup = this.setup = new Setup({ context: ctx, machine, lifetime: this.lifetime, restart, bindRepository: deployment => {
+      const setup = this.setup = new Setup({ context: ctx, machine, lifetime: this.lifetime, restart,
+        hasLegacyTickets: () => !!store.get(KV.runtime.repository) && store.tickets.list().some(ticket => !ticket.execution?.imDirect && !ticket.execution?.aw?.repository?.provider),
+        bindRepository: deployment => {
         const binding = JSON.stringify([deployment.gitlab || deployment.git ? 'gitlab' : 'github', (deployment.gitlab ?? deployment.git)?.host ?? 'github.com', deployment.repository.toLowerCase()])
         const previous = store.get(KV.runtime.repository)
         if (store.tickets.list().length && (previous ? previous !== binding : !!(deployment.gitlab || deployment.git))) throw new SetupError('repositoryChanged')
@@ -138,7 +141,7 @@ export class Runtime extends Service implements SourceHost {
         feishuPageSize: () => feishuSettings(sources).readPageSize, sourceLink: link }
       const sessions = this.sessions = new Sessions({ context: ctx, store, prompts, effects, health: board.claim('models'), masterId,
         lifetime: this.lifetime,
-        closing: () => this.closing(), environment, gitOnly: () => setup.configured() && !!setup.deployment.git,
+        closing: () => this.closing(), environment, gitOnly: () => setup.configured() && (!!setup.deployment.git || !setup.deployment.repository),
         tools: (agent, ticket) => ticket ? executorTools(this.toolHost, ticket) : mainTools(this.toolHost, agent) })
       const policyChanged: EngineForSettings['policyChanged'] = (from, to, effects) => { this.engine.policyChanged(from, to, effects) }
       this.settings = new Settings({ store, sources, engine: { policyChanged }, health: board, context: ctx, lifetime: this.lifetime, sessions,
@@ -155,23 +158,63 @@ export class Runtime extends Service implements SourceHost {
       }) : undefined
       const ownerReport = ownerReports(feishuOwnerReportRoute(machine.ownerReportChatId, machine.ownerReportBotId),
         ticket => store.triggers.get(ticket.origin.triggerId)?.channel, message => outbox.send(message), id => store.receipts.get(id))
+      const directOrigin = (ticket: Ticket) => store.triggers.get(ticket.origin.triggerId)
+      const authorizedDirectOrigin = (ticket: Ticket) => {
+        const trigger = directOrigin(ticket)
+        const config = setup.deployment.imDirect
+        return config && directWorkScope(trigger, config.senderId,
+          !!trigger && ticket.mandate.strength === 'explicit' && !!allowedSender(store.settings(), trigger.actor))
+      }
+      const publishReport = (ticket: Ticket) => {
+        if (!ticket.execution?.imDirect) return ownerReport.publish(ticket)
+        const message = directReadyNotice(ticket, directOrigin(ticket))
+        if (message) outbox.send(message)
+      }
       this.executor = new DshExecutor({ context: ctx, get engine() { return runtime.engine }, store, effects, outbox, health: board.claim('worker'), machine,
         lifetime: this.lifetime, sessions, closing: () => this.closing(), paused: () => this.paused(), environment, sourceLink: link,
-        repliedTo: trigger => repliedTo({ store, sources }, trigger), publishOwnerReport: ownerReport.publish,
+        repliedTo: trigger => repliedTo({ store, sources }, trigger), publishOwnerReport: publishReport,
         verifyRepository: aw => verifyAwBinding(aw, setup.deployment),
+        verifyDirectWork: (work, ticket) => {
+          if (authorizedDirectOrigin(ticket) !== work.scope) throw new Error('IM direct sender is no longer authorized')
+          verifyDirectWork(work, setup.deployment.imDirect)
+        },
         externalTask: async ticket => {
           const origin = store.triggers.get(ticket.origin.triggerId)
+          const config = setup.deployment.imDirect
+          if (config && origin?.meta.directScope) {
+            const scope = authorizedDirectOrigin(ticket)
+            if (!scope) throw new Error('Feishu direct work is unavailable for this instance or sender')
+            return loadDirectWork(scope, config, commands, this.lifetime)
+          }
           const request = origin ? awDispatchRequest(origin) : undefined
-          if (setup.deployment.git && !request) throw new Error('Git-only development requires an AW taskId, fixed revision and explicit phase/scope.')
+          if ((setup.deployment.git || !setup.deployment.repository) && !request)
+            throw new Error(setup.deployment.imDirect ? 'Send an explicit Feishu “直接做：…” request or an AW fixed task reference.' : 'Git-only development requires an AW taskId, fixed revision and explicit phase/scope.')
           return request ? aw.load(request, setup.deployment, commands, this.lifetime) : undefined
         } })
       this.assessor = new MasterAssessor({ get engine() { return runtime.engine }, commands, get deployment() { return setup.deployment }, effects,
         settings: () => store.settings(), paused: () => this.paused(), threadContext: trigger => sources.threadContext(trigger),
-        deliver: (id, text) => sessions.prompt(masterId, id, text, 'steer'), candidateCard: candidate => candidateCard(links, candidate) })
+        deliver: (id, text) => sessions.prompt(masterId, id, text, 'steer'), candidateCard: async candidate => {
+          const card = await candidateCard(links, candidate)
+          const trigger = candidate.triggers.at(-1)
+          const direct = machine.imDirect && directWorkScope(trigger, machine.imDirect.senderId, !!trigger && !!allowedSender(store.settings(), trigger.actor))
+          return direct ? { ...card, next_action: 'This sender explicitly requested Feishu direct work. Use the native Ticket pathway. '
+            + 'With a clear request, accept or attach as appropriate. Keep the acknowledgement short and name the scope and expected behavior. '
+            + 'If the request is unclear, obtain clarification in the original topic before any changes. Do not broaden the stated scope.' } : card
+        } })
       const { assessor, executor } = this
       const policy = () => settingsPolicy(store.settings(), sources)
       const engine = this.engine = new Engine({ repo: store, scope: sources, policy, assessor, executor,
-        outbox, readyReply: ownerReport.readyReply, prepareTicket: (ticket, outcome) => executor.prepare(ticket, outcome), emit: event => {
+        outbox, readyReply: ticket => {
+          if (!ticket.execution?.imDirect) return ownerReport.readyReply(ticket)
+          const message = directReadyNotice(ticket, directOrigin(ticket))
+          const receipt = message && store.receipts.get(message.id)
+          return message && receipt && receipt.status !== 'dropped' ? { id: message.id, status: receipt.status, reused: true } : undefined
+        }, allowsFollowup: (ticket, trigger) => {
+          const origin = directOrigin(ticket)
+          if (!ticket.execution?.imDirect && !(machine.imDirect && origin?.meta.directScope)) return true
+          return !!origin && trigger.human && trigger.source === 'feishu' && trigger.actor.id === origin.actor.id
+            && !!authorizedDirectOrigin(ticket) && trigger.threads.some(thread => thread.source === 'feishu' && origin.threads.some(item => item.id === thread.id))
+        }, prepareTicket: (ticket, outcome) => executor.prepare(ticket, outcome), emit: event => {
           recordDispatch?.(event)
           const ownerDispatches = recordOwnerDispatch?.(event)
           if (event.type === 'decision.recorded' && event.data.kind === 'unavailable') {
@@ -179,7 +222,7 @@ export class Runtime extends Service implements SourceHost {
             if (decision?.reason.some(reason => reason.code === 'timeout')) {
               for (const triggerId of decision.triggerIds) {
                 if (ownerDispatches?.has(triggerId)) continue
-                const message = dispatchTimeoutNotice(decision.id, store.triggers.get(triggerId))
+                const message = dispatchTimeoutNotice(decision.id, store.triggers.get(triggerId), !!machine.imDirect)
                 if (message) outbox.send(message)
               }
             }
@@ -208,7 +251,9 @@ export class Runtime extends Service implements SourceHost {
         get deployment() { return setup.deployment }, configured: () => setup.configured(),
         get setupProblem() { return setup.problem }, get feishuProblem() { return setup.feishuProblem }, receive: trigger => passes.receive(trigger) }
       this.toolHost = { context: ctx, engine, store, prompts, sessions, settings: this.settings, assessor, resources,
-        ownerReportEnabled: ownerReport.enabled, publishOwnerReport: ownerReport.publish,
+        ownerReportEnabled: ownerReport.enabled, publishOwnerReport: publishReport,
+        verifyDirectCandidate: (ticket: Ticket, candidate: string, reviewId: string, signal: AbortSignal) =>
+          verifyDirectCandidate(ctx, ticket, workerSessionId(ticket.id), candidate, reviewId, signal),
         get github() { return runtime.context({ kind: 'github', health: ['github'] }) },
         get gitlab() { return runtime.context({ kind: 'gitlab', health: ['gitlab'] }) },
         requestPass: () => { passes.request() }, sendReplies: () => outbox.sent(),

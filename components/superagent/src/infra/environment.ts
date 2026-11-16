@@ -7,7 +7,7 @@ import { lstat, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node
 import { realpathSync } from 'node:fs'
 import { delimiter, join, resolve } from 'node:path'
 import type { SubprocessOutputReader, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import type { Deployment } from '../deployment.ts'
+import { cleanRepository, type Deployment } from '../deployment.ts'
 import { SetupError } from '../setup.ts'
 import { CliError } from './commands.ts'
 
@@ -85,10 +85,18 @@ async function own(file: string, text: string, mode = 0o644): Promise<void> {
  * Atomically writes worker CLI shims and the isolated git configuration file into the state directory, refusing to overwrite foreign files.
  * Each shim strips the shim directory from PATH before exec so wrapper scripts resolving `gh` or `lark-cli` by name reach the real binary.
  */
-export async function writeEnvironment(deployment: Pick<Deployment, 'stateDir' | 'repository' | 'github' | 'gitlab' | 'git' | 'feishu'>, blockedCommands: readonly string[]): Promise<void> {
+export async function writeEnvironment(deployment: Pick<Deployment, 'stateDir' | 'repository' | 'github' | 'gitlab' | 'git' | 'feishu' | 'awRepositories' | 'imDirect'>, blockedCommands: readonly string[]): Promise<void> {
   const { stateDir, github, gitlab, git, feishu } = deployment
-  if (!github && !gitlab && !git) throw new Error('No repository account configured')
-  const account = gitlab ?? github!
+  const account = gitlab ?? github
+  const routes = Object.values(deployment.awRepositories ?? {}).filter(entry => entry.provider)
+  if (deployment.imDirect && !routes.some(entry => cleanRepository(entry.repositoryUrl) === cleanRepository(deployment.imDirect!.repositoryUrl)))
+    routes.push(deployment.imDirect)
+  if (!account && !git && !routes.length) throw new Error('No repository account configured')
+  for (const entry of routes) {
+    if (!entry.credentialFile) continue
+    const info = await lstat(entry.credentialFile)
+    if (!info.isFile() || info.mode & 0o077) throw new Error('Repository credential file must be private and regular')
+  }
   const host = (gitlab ?? git)?.host ?? 'github.com'
   const protocol = (gitlab ?? git)?.protocol ?? 'https'
   const dir = workerBin(stateDir)
@@ -110,21 +118,29 @@ export async function writeEnvironment(deployment: Pick<Deployment, 'stateDir' |
   ].join('\n')
   const run = (program: string): string => `${withoutShims}\nexec ${shellQuote(program)} "$@"`
   const fail = (message: string): string => `echo ${shellQuote(message)} >&2\nexit 1`
-  await shim('gh', github ? run(github.cli) : fail('gh is unavailable: this deployment uses GitLab.'))
-  if (gitlab) await shim('glab', `${Object.entries(gitlabVariables(gitlab)).map(([key, value]) => `${key}=${shellQuote(value)}; export ${key}`).join('\n')}\n${run(gitlab.cli)}`)
-  else if (git) await shim('glab', fail('GitLab API is not enabled; use Git and report the branch, candidate SHA and verification evidence.'))
+  const gitOnlyGuard = ['if [ "${DSH_SUPERAGENT_GIT_ONLY:-}" = 1 ]; then',
+    fail('This AW repository uses Git without a platform API.'), 'fi', ''].join('\n')
+  await shim('gh', github ? gitOnlyGuard + run(github.cli) : fail('gh is unavailable: GitHub API is not enabled on this deployment.'))
+  if (gitlab) await shim('glab', gitOnlyGuard + `${Object.entries(gitlabVariables(gitlab)).map(([key, value]) => `${key}=${shellQuote(value)}; export ${key}`).join('\n')}\n${run(gitlab.cli)}`)
+  else if (git || routes.length) await shim('glab', fail('GitLab API is not enabled; use Git and report the branch, candidate SHA and verification evidence.'))
   await shim('lark-cli', feishu ? run(feishu.cli) : fail('lark-cli is unavailable: this installation has no Feishu bot.'))
   for (const name of new Set(blockedCommands.filter(name => !WORKER_COMMANDS.includes(name)))) {
-    await shim(name, fail(git ? `${name} is blocked in this installation.` : `${name} is blocked in this installation; use ${gitlab ? 'glab' : 'gh'}, which acts as ${account.login}.`))
+    await shim(name, fail(!account ? `${name} is blocked in this installation.` : `${name} is blocked in this installation; use ${gitlab ? 'glab' : 'gh'}, which acts as ${account.login}.`))
   }
   for (const name of before) if (!kept.has(name)) await unlink(join(dir, name))
   await own(workerGitConfig(stateDir), [
     MARKER,
     // Make git refuse to commit without an explicit identity set by the worker instead of guessing from the operator's OS user.
     '[user]', '\tuseConfigOnly = true',
-    '[credential]', '\thelper =', ...git ? ['\tuseHttpPath = true'] : [],
-    `[credential "${protocol}://${host}"]`, `\thelper = ${gitQuote(repositoryCredentialHelper(deployment))}`,
-    `[url "${protocol}://${host}/"]`, `\tinsteadOf = git@${host}:`, `\tinsteadOf = ssh://git@${host}/`,
+    '[credential]', '\thelper =', ...(git ? ['\tuseHttpPath = true'] : []),
+    ...account || git ? [
+      `[credential "${protocol}://${host}"]`, `\thelper = ${gitQuote(repositoryCredentialHelper(deployment))}`,
+      `[url "${protocol}://${host}/"]`, `\tinsteadOf = git@${host}:`, `\tinsteadOf = ssh://git@${host}/`,
+    ] : [],
+    ...routes.flatMap(entry => [
+      `[credential ${gitQuote(cleanRepository(entry.repositoryUrl) + '.git')}]`, '\tuseHttpPath = true', '\thelper =',
+      ...entry.credentialFile ? [`\thelper = ${gitQuote(`store --file=${shellQuote(entry.credentialFile)}`)}`] : [],
+    ]),
     // Include Git LFS filters because the operator's global gitconfig (which usually holds them) is ignored.
     '[filter "lfs"]', '\tclean = git-lfs clean -- %f', '\tsmudge = git-lfs smudge -- %f', '\tprocess = git-lfs filter-process', '\trequired = true',
   ].join('\n') + '\n')
@@ -150,9 +166,13 @@ export async function runAsWorker(subprocess: SubprocessRuntime, argv: string[],
 }
 
 /** Verifies that worker git invocations resolve the configured code host's credential helper. */
-export async function verifyEnvironment(deployment: Pick<Deployment, 'github' | 'gitlab' | 'git' | 'stateDir'>, subprocess: SubprocessRuntime, signal: AbortSignal): Promise<void> {
+export async function verifyEnvironment(deployment: Pick<Deployment, 'github' | 'gitlab' | 'git' | 'stateDir' | 'awRepositories' | 'imDirect'>, subprocess: SubprocessRuntime, signal: AbortSignal): Promise<void> {
   const { github, gitlab, git, stateDir } = deployment
   const account = gitlab ?? github ?? git
+  if (!account && (deployment.imDirect || Object.values(deployment.awRepositories ?? {}).some(entry => entry.provider))) {
+    await runAsWorker(subprocess, ['git', 'config', '--get', 'user.useConfigOnly'], stateDir, signal)
+    return
+  }
   if (!account) throw new Error('No repository account configured')
   const host = (gitlab ?? git)?.host ?? 'github.com'
   // `-z` separates fields with NUL and never quotes paths.

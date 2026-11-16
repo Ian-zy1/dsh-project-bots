@@ -325,6 +325,7 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `src/app/passes.ts` | Passes, the pass scheduler |
 | `src/app/outbox.ts` | The Outbox: the Engine's `Outbox` port, the receipts and the `reply` effects that send them |
 | `src/app/notices.ts` | The main Session's notices and relays: `eventNotice`, `reportRelay`, `resultRelay` and `followupRelay` |
+| `src/app/im-direct.ts` | Pins the configured Feishu direct-work checkout, verifies native independent review of the candidate SHA, and formats the original-topic result. |
 | `src/app/owner-report.ts` | Optional AW implementation facts through native Outbox to a configured Feishu consumer; no model/session dependency |
 | `src/app/store.ts` | The Store, and `Receipt`, a message of the outbox |
 | `src/app/store-read.ts` | `storeReads`: the Store's read queries for the views, the tools and the Sources' polls, which never write |
@@ -443,6 +444,7 @@ Some generic modules still refer directly to GitHub or Feishu:
 | `tests/passes.spec.ts` | Passes: one at a time, the ones asked for during a pass run as one after it, and the runtime health a failed pass reports |
 | `tests/outbox.spec.ts` | The Outbox on a running Runtime: messages wait while processing is paused or their Source is not installed |
 | `tests/worker-failure-notice.spec.ts` | System failures notify the origin through the native Outbox without a Router model; retry, deduplication and safe fixed messages |
+| `tests/im-direct.spec.ts` | Native Feishu direct-work admission, fixed checkout, original-topic continuation, reviewed candidate and Outbox delivery. |
 | `tests/owner-report.spec.ts` | Candidate SHA, opt-in group/phase, native Outbox deduplication and failure delivery without Router availability. |
 | `tests/cache.spec.ts` | `TextCache` |
 | `tests/queue.spec.ts` | The Runtime's work through the effect queue, and what earlier versions stored |

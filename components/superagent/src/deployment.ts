@@ -14,6 +14,8 @@ const absolute = (description: string) => s.string().pattern(/^\//).description(
 const BindingId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/)
 const AwRepository = z.object({
   repositoryUrl: z.string().url(),
+  provider: z.enum(['github', 'gitlab']).optional(),
+  credentialFile: z.string().regex(/^\/[^\r\n\0]*$/).optional(),
   environmentRef: BindingId,
   environment: z.object({
     path: z.array(z.string().regex(/^\/[^:\r\n\0]*$/)).min(1),
@@ -22,6 +24,14 @@ const AwRepository = z.object({
   }).strict(),
 }).strict()
 export type AwRepository = z.infer<typeof AwRepository>
+const ImDirectRepository = AwRepository.extend({
+  provider: z.enum(['github', 'gitlab']),
+  senderId: z.string().regex(/^ou_[A-Za-z0-9]+$/),
+  author: z.object({ name: z.string().trim().min(1).max(120).regex(/^[^<>\r\n\0]+$/), email: z.email() }).strict(),
+  branch: z.string().regex(/^(?!-)[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/)
+    .refine(value => !value.includes('..'), 'Use a Git branch name'),
+})
+export type ImDirectRepository = z.infer<typeof ImDirectRepository>
 export const cleanRepository = (value: string): string => {
   const url = new URL(value)
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash)
@@ -34,6 +44,7 @@ export const Config = s.object({
   ownerReportBotId: s.string().pattern(/^ou_[A-Za-z0-9]+$/).description('Optional Owner consumer bot ID in the publishing app; requires ownerReportChatId. No Codex endpoint.'),
   ownerReportChatId: s.string().pattern(/^oc_[A-Za-z0-9]+$/).description('Only this Feishu group publishes structured AW implementation reports; optional and disabled when absent.'),
   ownerDispatchEvents: s.boolean().description('Publish Owner dispatch decisions to the configured Feishu group; enable after Relay is upgraded.'),
+  imDirect: s.any().description('Opt-in Feishu direct work. One manually configured Git repository, branch and toolchain.'),
   awBaseUrl: s.string().description('Configured Agent Workboard service base URL; optional. Dispatch messages cannot override it.'),
   awProjectId: s.string().description('AW project assigned to this instance.'),
   awRepositories: s.any().description('Allowed AW repositories and their versioned execution environments.'),
@@ -56,6 +67,7 @@ export interface Machine {
   ownerReportBotId?: string
   ownerReportChatId?: string
   ownerDispatchEvents?: boolean
+  imDirect?: ImDirectRepository
   awBaseUrl?: string
   awProjectId?: string
   awRepositories?: Record<string, AwRepository>
@@ -93,11 +105,27 @@ export function machineOf(config: DeploymentConfig): Machine {
   const awRepositories = config.awRepositories === undefined ? undefined : z.record(BindingId, AwRepository).parse(config.awRepositories)
   if (config.awProjectId !== undefined) BindingId.parse(config.awProjectId)
   if (config.awProjectId || awRepositories) {
-    if (!config.awProjectId || !awRepositories || !Object.keys(awRepositories).length || !config.awBaseUrl || config.repositoryProvider === 'gitlab')
-      throw new Error('AW project routing requires awProjectId, awRepositories, awBaseUrl and GitHub')
-    for (const r of Object.values(awRepositories))
-      if (!/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+$/.test(cleanRepository(r.repositoryUrl)))
-        throw new Error('AW project repositories must be HTTPS repositories on github.com')
+    if (!config.awProjectId || !awRepositories || !Object.keys(awRepositories).length || !config.awBaseUrl)
+      throw new Error('AW project routing requires awProjectId, awRepositories and awBaseUrl')
+    const repositories = new Set<string>()
+    for (const entry of Object.values(awRepositories)) {
+      const url = cleanRepository(entry.repositoryUrl)
+      if (!entry.provider && (entry.credentialFile || config.repositoryProvider === 'gitlab' || !/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+$/.test(url)))
+        throw new Error('Specify a repository provider for Git transport; legacy entries require github.com')
+      if (entry.provider && !/^(?:\/[\w.-]+){2,}$/.test(new URL(url).pathname))
+        throw new Error('AW repository path must name at least an owner and repository')
+      if (repositories.has(url)) throw new Error('Configure each repository URL only once')
+      repositories.add(url)
+    }
+  }
+  const imDirect = config.imDirect === undefined ? undefined : ImDirectRepository.parse(config.imDirect)
+  if (imDirect) {
+    const url = cleanRepository(imDirect.repositoryUrl)
+    if (!/^(?:\/[\w.-]+){2,}$/.test(new URL(url).pathname)) throw new Error('IM direct repository must name an owner and repository')
+    for (const entry of Object.values(awRepositories ?? {})) {
+      if (cleanRepository(entry.repositoryUrl) === url && entry.credentialFile !== imDirect.credentialFile)
+        throw new Error('IM direct and AW must use the same credential file for the same repository')
+    }
   }
   if (config.publicWebOrigin) {
     const origin = new URL(config.publicWebOrigin)
@@ -108,6 +136,7 @@ export function machineOf(config: DeploymentConfig): Machine {
     ...(config.ownerReportBotId ? { ownerReportBotId: config.ownerReportBotId, ownerReportChatId: config.ownerReportChatId } : {}),
     ...(config.ownerDispatchEvents ? { ownerDispatchEvents: true } : {}),
     ...(config.awBaseUrl ? { awBaseUrl: config.awBaseUrl, ...(config.awAccessTokenEnv ? { awAccessTokenEnv: config.awAccessTokenEnv } : {}) } : {}),
+    ...(imDirect ? { imDirect } : {}),
     ...(awRepositories ? { awProjectId: config.awProjectId, awRepositories } : {}),
     ...(config.awDispatchWriteUrl ? { awDispatchWriteUrl: config.awDispatchWriteUrl, awDispatchAuthorizationFile: config.awDispatchAuthorizationFile } : {}),
     ...(config.publicWebOrigin ? { publicWebOrigin: config.publicWebOrigin } : {}), ...(config.repositoryProvider === 'gitlab' ? { repositoryProvider: 'gitlab' as const } : {}) }
